@@ -1,18 +1,15 @@
 FlashAttention-2 on CPU
 =======================
-
-This repository contains several implementations of FlashAttention-2 forward pass on CPU in NumPy, Numba (JIT), and C++ (Eigen).
+This repository contains several implementations of FlashAttention-2 forward pass on CPU in Python (NumPy, Numba), and C++ (Eigen).
 It was originally developed as a final project for a machine learning course.
 
 Dependencies
 ------------
-
-- Python packages: `numpy`, `numba`, `pandas`, `matplotlib`
-- Eigen3
+- Python packages: numpy, numba, pandas, matplotlib
+- C++ libraries: Eigen3
 
 Key Files
 ---------
-
 - `data_generation.py`: generates random testsets.
 - `naive_attn.py`, `naive_attn.cpp`: Naive attention implementations in Python and C++.
 - `flash_attn2.py`, `flash_attn2_jit.py`: FlashAttention-2 forward pass in NumPy and Numba (JIT).
