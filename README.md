@@ -2,7 +2,8 @@ FlashAttention-2 on CPU
 =======================
 This repository contains several implementations of FlashAttention-2 forward pass on CPU in Python (NumPy, Numba), and C++ (Eigen).
 Scripts for profiling runtime distributions and naive attention baselines are also included.
-It was originally developed as a final project for a machine learning course. 
+
+This project originated as a final project for a machine learning course.
 My report is avaiable at [https://drive.google.com/file/d/1Ui7b7OmlLXq72F-xsxJRqMYaqPPlKO0-/view?usp=sharing](https://drive.google.com/file/d/1Ui7b7OmlLXq72F-xsxJRqMYaqPPlKO0-/view?usp=sharing).
 
 Dependencies
