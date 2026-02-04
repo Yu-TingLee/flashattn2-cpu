@@ -9,4 +9,23 @@ namespace flash_attn {
 MatrixXfRM fa2_forward(const MatrixXfRM& Q, const MatrixXfRM& Kt,
                        const MatrixXfRM& V, int T, int d, int M_bytes, float scale);
 
+// Wall time per step of the inner loop, in seconds.
+struct ProfileData {
+    double runtime        = 0.0;
+    double load_kv        = 0.0;
+    double compute_s      = 0.0;
+    double online_softmax = 0.0;
+    double update_o       = 0.0;
+    double others         = 0.0;
+};
+
+struct ProfileResult {
+    MatrixXfRM  O;
+    ProfileData profile;
+};
+
+ProfileResult fa2_forward_profile(const MatrixXfRM& Q, const MatrixXfRM& Kt,
+                                  const MatrixXfRM& V, int T, int d,
+                                  int M_bytes, float scale);
+
 }  // namespace flash_attn

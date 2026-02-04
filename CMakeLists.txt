@@ -25,5 +25,13 @@ target_link_libraries(flash_attn_io PUBLIC Eigen3::Eigen flash_attn_compile_opti
 add_library(flash_attn_st STATIC
     src/naive_attention.cpp
     src/flash_attention.cpp
+    src/flash_attention_profile.cpp
 )
 target_link_libraries(flash_attn_st PUBLIC flash_attn_io)
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+foreach(bench bench_naive bench_fa2 bench_fa2_profile)
+    add_executable(${bench} benchmarks/${bench}.cpp)
+    target_link_libraries(${bench} PRIVATE flash_attn_st)
+endforeach()
