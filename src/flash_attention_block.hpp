@@ -5,6 +5,8 @@
 
 namespace flash_attn {
 
+// Internal linkage on purpose: this header is compiled both with and without
+// OpenMP, and the serial kernels must not pick up an OpenMP-built copy.
 namespace {
 
 struct Tiling {
