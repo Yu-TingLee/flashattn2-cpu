@@ -60,6 +60,7 @@ OPT_FLAGS=(O3)
 # for opt in "${OPT_FLAGS[@]}"; do
 #   g++ -std=c++17 -${opt} -march=native -I /usr/include/eigen3 -o bin/naive_attn_${opt} naive_attn.cpp
 #   g++ -std=c++17 -${opt} -march=native -I /usr/include/eigen3 -o bin/flash_attn2_${opt} flash_attn2.cpp
+#   g++ -std=c++17 -${opt} -march=native -fopenmp -I /usr/include/eigen3 -o bin/flash_attn2_${opt}_mt flash_attn2.cpp
 #   g++ -std=c++17 -${opt} -march=native -I /usr/include/eigen3 -o bin/flash_attn2_profile_${opt} ./profile/flash_attn2_profile.cpp
 # done
 
@@ -78,6 +79,17 @@ for opt in "${OPT_FLAGS[@]}"; do
       for m in "${M_bytes_values[@]}"; do
         echo "Running C++ flash_attn2_${opt}: T=$t, d=$d, M=$(($m/1024))KiB, opt=$opt"
         ./build/bin/flash_attn2_${opt} --T "$t" --d "$d" --M_bytes "$m" --num_testsets "$num_testsets" --opt_flag "$opt"
+      done
+    done
+  done
+done
+
+for opt in "${OPT_FLAGS[@]}"; do
+  for t in "${T_values[@]}"; do
+    for d in "${d_values[@]}"; do
+      for m in "${M_bytes_values[@]}"; do
+        echo "Running C++ flash_attn2_${opt}_mt: T=$t, d=$d, M=$(($m/1024))KiB, opt=$opt"
+        ./build/bin/flash_attn2_${opt}_mt --T "$t" --d "$d" --M_bytes "$m" --num_testsets "$num_testsets" --opt_flag "$opt"
       done
     done
   done
@@ -109,7 +121,7 @@ for opt in "${OPT_FLAGS[@]}"; do
     for d in "${d_values[@]}"; do
       for m in "${M_bytes_values_profile[@]}"; do
         echo "Running C++ FA-2 profile_${opt}: T=$t, d=$d, M=$(($m/1024))KiB, opt=$opt"
-        ./bin/flash_attn2_profile_${opt} --T "$t" --d "$d" --M_bytes "$m" --num_testsets "$num_testsets" --opt_flag "$opt"
+        ./build/bin/flash_attn2_profile_${opt} --T "$t" --d "$d" --M_bytes "$m" --num_testsets "$num_testsets" --opt_flag "$opt"
       done
     done
   done

@@ -15,9 +15,10 @@ X_LIMITS = (32, 1024)
 
 # Implementation colors and labels
 IMPL_STYLES = {
-    'jit': {'label': 'FlashAttention-2 (Numba)', 'color': None},
-    'fa2': {'label': 'FlashAttention-2 (NumPy)', 'color': 'green'},
-    'fa2_cpp': {'label': 'FlashAttention-2 (C++)', 'color': 'purple'},
+    'jit': {'label': 'FA-2 (Numba)', 'color': None},
+    'fa2': {'label': 'FA-2 (NumPy)', 'color': 'green'},
+    'fa2_cpp': {'label': 'FA-2 (C++, ST)', 'color': 'purple'},
+    'fa2_cpp_mt': {'label': 'FA-2 (C++, MT)', 'color': 'yellow'},
     'naive_py': {'label': 'Naive Attention (Python)', 'color': 'r', 'linestyle': '--'},
     'naive_cpp': {'label': 'Naive Attention (C++)', 'color': 'orange', 'linestyle': '--'},
 }
@@ -54,8 +55,9 @@ def load_runtime_data():
     agg_jit = load_and_agg("fa2_jit", "pct_runtime_jit")
     agg_fa2 = load_and_agg("fa2", "pct_runtime_fa2")
     agg_fa2_cpp = load_and_agg("fa2_cpp_O3", "pct_runtime_fa2_cpp")
+    agg_fa2_cpp_mt = load_and_agg("fa2_cpp_O3_mt", "pct_runtime_fa2_cpp_mt")
     
-    return df_naive, df_cpp_o3, agg_jit, agg_fa2, agg_fa2_cpp
+    return df_naive, df_cpp_o3, agg_jit, agg_fa2, agg_fa2_cpp, agg_fa2_cpp_mt
 
 
 def get_unique_values(dfs, col):
@@ -95,11 +97,12 @@ def add_split_legend(fig, handles, labels, y_pos_top=0.03, y_pos_bottom=0.01):
                    bbox_to_anchor=(0.52, y_pos_top), ncol=ncol, columnspacing=0.6,
                    handlelength=1.5, frameon=False)
 
-def plot_runtime_subplot(ax, agg_jit, agg_fa2, agg_fa2_cpp, df_cpp_o3, df_naive,
+def plot_runtime_subplot(ax, agg_jit, agg_fa2, agg_fa2_cpp, agg_fa2_cpp_mt, df_cpp_o3, df_naive,
                          t_val, d_val, plot_flags, is_speedup=False):
     s_jit = filter_data(agg_jit, t_val, d_val).sort_values("M_bytes")
     s_fa2 = filter_data(agg_fa2, t_val, d_val).sort_values("M_bytes")
     s_fa2_cpp = filter_data(agg_fa2_cpp, t_val, d_val).sort_values("M_bytes")
+    s_fa2_cpp_mt = filter_data(agg_fa2_cpp_mt, t_val, d_val).sort_values("M_bytes")
     cpp_o3 = filter_data(df_cpp_o3, t_val, d_val)
     py_sub = filter_data(df_naive, t_val, d_val)
     
@@ -121,6 +124,11 @@ def plot_runtime_subplot(ax, agg_jit, agg_fa2, agg_fa2_cpp, df_cpp_o3, df_naive,
             y = 100.0 / s_fa2_cpp["pct_runtime_fa2_cpp"]
             ax.plot(s_fa2_cpp["M_bytes"]/1024, y, linewidth=LINEWIDTH,
                     label=IMPL_STYLES['fa2_cpp']['label'], color=IMPL_STYLES['fa2_cpp']['color'])
+            y_data.extend(y)
+        if plot_flags['fa2_cpp_mt'] and not s_fa2_cpp_mt.empty:
+            y = 100.0 / s_fa2_cpp_mt["pct_runtime_fa2_cpp_mt"]
+            ax.plot(s_fa2_cpp_mt["M_bytes"]/1024, y, linewidth=LINEWIDTH,
+                    label=IMPL_STYLES['fa2_cpp_mt']['label'], color=IMPL_STYLES['fa2_cpp_mt']['color'])
             y_data.extend(y)
         if plot_flags['naive_py']:
             ax.axhline(y=1, color=IMPL_STYLES['naive_py']['color'], 
@@ -146,6 +154,10 @@ def plot_runtime_subplot(ax, agg_jit, agg_fa2, agg_fa2_cpp, df_cpp_o3, df_naive,
             ax.plot(s_fa2_cpp["M_bytes"]/1024, s_fa2_cpp["pct_runtime_fa2_cpp"], linewidth=LINEWIDTH,
                     label=IMPL_STYLES['fa2_cpp']['label'], color=IMPL_STYLES['fa2_cpp']['color'])
             y_data.extend(s_fa2_cpp["pct_runtime_fa2_cpp"])
+        if plot_flags['fa2_cpp_mt'] and not s_fa2_cpp_mt.empty:
+            ax.plot(s_fa2_cpp_mt["M_bytes"]/1024, s_fa2_cpp_mt["pct_runtime_fa2_cpp_mt"], linewidth=LINEWIDTH,
+                    label=IMPL_STYLES['fa2_cpp_mt']['label'], color=IMPL_STYLES['fa2_cpp_mt']['color'])
+            y_data.extend(s_fa2_cpp_mt["pct_runtime_fa2_cpp_mt"])
         if plot_flags['naive_py']:
             ax.axhline(y=100, color=IMPL_STYLES['naive_py']['color'],
                        linestyle=IMPL_STYLES['naive_py']['linestyle'], linewidth=LINEWIDTH,
@@ -175,31 +187,32 @@ def set_y_ticks(ax, y_data, is_speedup=False):
 
 
 def plot_performance(
-    plot_jit=True, plot_fa2=True, plot_fa2_cpp=True,
+    plot_jit=True, plot_fa2=True, plot_fa2_cpp=True, plot_fa2_cpp_mt=True,
     plot_naive_py=True, plot_naive_cpp=True,
     also_plot_speedup=True,
-    plot_jit_speedup=None, plot_fa2_speedup=None, plot_fa2_cpp_speedup=None,
+    plot_jit_speedup=None, plot_fa2_speedup=None, plot_fa2_cpp_speedup=None, plot_fa2_cpp_mt_speedup=None,
     plot_naive_py_speedup=None, plot_naive_cpp_speedup=None,
     y_logscale=False, y_logscale_speedup=False
 ):
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     
     try:
-        df_naive, df_cpp_o3, agg_jit, agg_fa2, agg_fa2_cpp = load_runtime_data()
+        df_naive, df_cpp_o3, agg_jit, agg_fa2, agg_fa2_cpp, agg_fa2_cpp_mt = load_runtime_data()
     except FileNotFoundError as e:
         print(f"Error: CSV missing. {e}")
         return
     
-    T_values = get_unique_values([agg_jit, agg_fa2, agg_fa2_cpp], "T")
-    d_values = get_unique_values([agg_jit, agg_fa2, agg_fa2_cpp], "d")
+    T_values = get_unique_values([agg_jit, agg_fa2, agg_fa2_cpp, agg_fa2_cpp_mt], "T")
+    d_values = get_unique_values([agg_jit, agg_fa2, agg_fa2_cpp, agg_fa2_cpp_mt], "d")
     nrows, ncols = len(T_values), len(d_values)
     
-    plot_flags = {'jit': plot_jit, 'fa2': plot_fa2, 'fa2_cpp': plot_fa2_cpp,
+    plot_flags = {'jit': plot_jit, 'fa2': plot_fa2, 'fa2_cpp': plot_fa2_cpp, 'fa2_cpp_mt': plot_fa2_cpp_mt,
                   'naive_py': plot_naive_py, 'naive_cpp': plot_naive_cpp}
     speedup_flags = {
         'jit': plot_jit if plot_jit_speedup is None else plot_jit_speedup,
         'fa2': plot_fa2 if plot_fa2_speedup is None else plot_fa2_speedup,
         'fa2_cpp': plot_fa2_cpp if plot_fa2_cpp_speedup is None else plot_fa2_cpp_speedup,
+        'fa2_cpp_mt': plot_fa2_cpp_mt if plot_fa2_cpp_mt_speedup is None else plot_fa2_cpp_mt_speedup,
         'naive_py': plot_naive_py,
         'naive_cpp': plot_naive_cpp if plot_naive_cpp_speedup is None else plot_naive_cpp_speedup,
     }
@@ -211,13 +224,12 @@ def plot_performance(
     for row, t_val in enumerate(T_values):
         for col, d_val in enumerate(d_values):
             ax = axes[row, col] if nrows > 1 else axes[col]
-            y_data = plot_runtime_subplot(ax, agg_jit, agg_fa2, agg_fa2_cpp, df_cpp_o3, df_naive,
+            y_data = plot_runtime_subplot(ax, agg_jit, agg_fa2, agg_fa2_cpp, agg_fa2_cpp_mt, df_cpp_o3, df_naive,
                                           t_val, d_val, plot_flags, is_speedup=False)
             setup_axis(ax, t_val, d_val, y_logscale)
             set_y_ticks(ax, y_data, is_speedup=False)
             if legend_ax is None:
                 legend_ax = ax
-    
     fig.text(0.52, 0.07, "Cache Budget M (KB)", ha='center', va='center', fontsize=9)
     fig.text(0.02, 0.5, "Relative Runtime (%)", ha='center', va='center', rotation='vertical', fontsize=9)
     if legend_ax:
@@ -235,7 +247,7 @@ def plot_performance(
         for row, t_val in enumerate(T_values):
             for col, d_val in enumerate(d_values):
                 ax2 = axes2[row, col] if nrows > 1 else axes2[col]
-                y_data = plot_runtime_subplot(ax2, agg_jit, agg_fa2, agg_fa2_cpp, df_cpp_o3, df_naive,
+                y_data = plot_runtime_subplot(ax2, agg_jit, agg_fa2, agg_fa2_cpp, agg_fa2_cpp_mt, df_cpp_o3, df_naive,
                                               t_val, d_val, speedup_flags, is_speedup=True)
                 setup_axis(ax2, t_val, d_val, y_logscale_speedup)
                 set_y_ticks(ax2, y_data, is_speedup=True)
@@ -252,20 +264,21 @@ def plot_performance(
         plt.close()
     
     # --- Summary File ---
-    _write_summary(agg_jit, agg_fa2, agg_fa2_cpp)
+    _write_summary(agg_jit, agg_fa2, agg_fa2_cpp, agg_fa2_cpp_mt)
     
     # --- Combined Plot ---
-    _plot_combined(agg_jit, agg_fa2, agg_fa2_cpp, df_cpp_o3, df_naive,
+    _plot_combined(agg_jit, agg_fa2, agg_fa2_cpp, agg_fa2_cpp_mt, df_cpp_o3, df_naive,
                    T_values, d_values, plot_flags, speedup_flags,
                    y_logscale, y_logscale_speedup)
 
 
-def _write_summary(agg_jit, agg_fa2, agg_fa2_cpp):
+def _write_summary(agg_jit, agg_fa2, agg_fa2_cpp, agg_fa2_cpp_mt):
     summary_lines = []
     for label, agg_df, col in [
         ("Numba", agg_jit, "pct_runtime_jit"),
         ("FA2 (NumPy)", agg_fa2, "pct_runtime_fa2"),
-        ("FA2 (C++)", agg_fa2_cpp, "pct_runtime_fa2_cpp")
+        ("FA2 (C++ ST)", agg_fa2_cpp, "pct_runtime_fa2_cpp"),
+        ("FA2 (C++ MT)", agg_fa2_cpp_mt, "pct_runtime_fa2_cpp_mt")
     ]:
         top = agg_df.nsmallest(10, col)
         bottom = agg_df.nlargest(10, col)
@@ -285,7 +298,7 @@ def _write_summary(agg_jit, agg_fa2, agg_fa2_cpp):
         f.write("\n".join(summary_lines))
 
 
-def _plot_combined(agg_jit, agg_fa2, agg_fa2_cpp, df_cpp_o3, df_naive,
+def _plot_combined(agg_jit, agg_fa2, agg_fa2_cpp, agg_fa2_cpp_mt, df_cpp_o3, df_naive,
                    T_values, d_values, plot_flags, speedup_flags,
                    y_logscale, y_logscale_speedup):
     nrows, ncols = len(T_values), len(d_values)
@@ -296,7 +309,7 @@ def _plot_combined(agg_jit, agg_fa2, agg_fa2_cpp, df_cpp_o3, df_naive,
     for row, t_val in enumerate(T_values):
         for col, d_val in enumerate(d_values):
             ax = axes[row, col] if nrows > 1 else axes[col]
-            y_data = plot_runtime_subplot(ax, agg_jit, agg_fa2, agg_fa2_cpp, df_cpp_o3, df_naive,
+            y_data = plot_runtime_subplot(ax, agg_jit, agg_fa2, agg_fa2_cpp, agg_fa2_cpp_mt, df_cpp_o3, df_naive,
                                           t_val, d_val, plot_flags, is_speedup=False)
             setup_axis(ax, t_val, d_val, y_logscale)
             set_y_ticks(ax, y_data, is_speedup=False)
@@ -307,7 +320,7 @@ def _plot_combined(agg_jit, agg_fa2, agg_fa2_cpp, df_cpp_o3, df_naive,
     for row, t_val in enumerate(T_values):
         for col, d_val in enumerate(d_values):
             ax2 = axes[row, col + ncols] if nrows > 1 else axes[col + ncols]
-            y_data = plot_runtime_subplot(ax2, agg_jit, agg_fa2, agg_fa2_cpp, df_cpp_o3, df_naive,
+            y_data = plot_runtime_subplot(ax2, agg_jit, agg_fa2, agg_fa2_cpp, agg_fa2_cpp_mt, df_cpp_o3, df_naive,
                                           t_val, d_val, speedup_flags, is_speedup=True)
             setup_axis(ax2, t_val, d_val, y_logscale_speedup)
             set_y_ticks(ax2, y_data, is_speedup=True)

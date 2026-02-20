@@ -10,6 +10,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
+find_package(OpenMP REQUIRED)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
@@ -28,3 +29,5 @@ endfunction()
 add_fa_executable(naive_attn_O3 naive_attn.cpp)
 add_fa_executable(flash_attn2_O3 flash_attn2.cpp)
 add_fa_executable(flash_attn2_profile_O3 profile/flash_attn2_profile.cpp)
+add_fa_executable(flash_attn2_O3_mt flash_attn2_mt.cpp)
+target_link_libraries(flash_attn2_O3_mt PRIVATE OpenMP::OpenMP_CXX)

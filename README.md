@@ -10,7 +10,7 @@ Dependencies
 
 Key Files
 ---------
-- `data_generation.py`: generates random testsets.
+- `data_generation.py`: Generates random testsets.
 - `naive_attn.py`, `naive_attn.cpp`: Naive attention implementations in Python and C++.
 - `flash_attn2.py`, `flash_attn2_jit.py`: FlashAttention-2 forward pass in NumPy and Numba (JIT).
 - `flash_attn2.cpp`: FlashAttention-2 forward pass in C++ using Eigen.
