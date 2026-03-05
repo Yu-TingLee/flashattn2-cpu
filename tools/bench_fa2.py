@@ -1,56 +1,12 @@
-import numpy as np
+import sys
 import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import numpy as np
 import time
 import argparse
-from utils import read_QKV
-
-
-def fa2_forward(Q, Kt, V, T, d, M_bytes, scale):
-    I = M_bytes // (4 * d * 4)
-    J = min(I, d)
-    if I < 1: I = 1
-    if J < 1: J = 1
-
-    Tr = (T + I - 1) // I
-    Tc = (T + J - 1) // J
-
-    O = np.zeros((T, d), dtype=np.float32)
-
-    for i in range(Tr):
-        row_start = i * I
-        row_end = min(row_start + I, T)
-        cur_I = row_end - row_start
-
-        l = np.zeros(cur_I, dtype=np.float32)
-        m = np.full(cur_I, -np.inf, dtype=np.float32)
-
-        Q_i = Q[row_start:row_end, :]
-
-        for j in range(Tc):
-            col_start = j * J
-            col_end = min(col_start + J, T)
-
-            Kt_j = np.asfortranarray(Kt[:, col_start:col_end])
-            V_j  = np.ascontiguousarray(V[col_start:col_end, :])
-
-            S = (Q_i @ Kt_j) * scale
-
-            m_block = S.max(axis=1)
-            m_new = np.maximum(m, m_block)
-
-            alpha = np.exp(m - m_new)
-            P = np.exp(S - m_new[:, None])
-
-            l_new = alpha * l + P.sum(axis=1)
-
-            O_block = O[row_start:row_end, :]
-            O[row_start:row_end, :] = (O_block * alpha[:, None]) + (P @ V_j)
-
-            m, l = m_new, l_new
-
-        O[row_start:row_end, :] /= l[:, None]
-
-    return O
+from flash_attn.attn import fa2_forward
+from flash_attn.io import read_QKV
 
 
 if __name__ == "__main__":
@@ -71,11 +27,12 @@ if __name__ == "__main__":
 
     completed_runs = set()
     with open(log_path, "r") as f:
-        _ = next(f, None)
+        next(f, None)
         for line in f:
             parts = line.strip().split(",")
             if len(parts) >= 4:
-                completed_runs.add((int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3])))
+                completed_runs.add((int(parts[0]), int(parts[1]),
+                                    int(parts[2]), int(parts[3])))
 
     scale = np.float32(1.0 / np.sqrt(np.float32(args.d)))
 
@@ -90,9 +47,8 @@ if __name__ == "__main__":
 
         t0 = time.perf_counter()
         O_np = fa2_forward(Q, Kt, V, args.T, args.d, args.M_bytes, scale)
-        t1 = time.perf_counter()
+        runtime = time.perf_counter() - t0
 
-        runtime = t1 - t0
         print("-" * 30)
         print(f"Runtime {i}: {runtime:.4f} seconds.")
         print("-" * 30)

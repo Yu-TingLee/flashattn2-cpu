@@ -12,22 +12,45 @@ endif()
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 find_package(OpenMP REQUIRED)
 
+# Shared compile options
+# INTERFACE library: propagates compile flags to every consumer transitively.
+add_library(flash_compile_opts INTERFACE)
+target_compile_definitions(flash_compile_opts INTERFACE EIGEN_NO_DEBUG)
+target_compile_options(flash_compile_opts INTERFACE
+    $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-O3 -ffast-math -march=native>
+    $<$<CXX_COMPILER_ID:MSVC>:/O2 /fp:fast /arch:AVX2>
+)
+
+# I/O utility library
+# Provides: load_npy, load_matrix
+# PUBLIC deps are forwarded to every library/executable that links this target.
+add_library(flash_cpu_io STATIC src/io.cpp)
+target_include_directories(flash_cpu_io PUBLIC include)
+target_link_libraries(flash_cpu_io PUBLIC Eigen3::Eigen flash_compile_opts)
+
+# Single-threaded algorithm library
+# Provides: naive_attention, fa2_forward (ST), fa2_forward_profile
+add_library(flash_cpu_st STATIC
+    src/attn.cpp
+    src/attn_profile.cpp
+)
+target_link_libraries(flash_cpu_st PUBLIC flash_cpu_io)
+
+# Multi-threaded algorithm library
+# Provides: fa2_forward (MT, OpenMP) — separate target to avoid symbol collision
+# with the ST version. bench_fa2_mt links this; all other tools link flash_cpu_st.
+add_library(flash_cpu_mt STATIC src/attn_mt.cpp)
+target_link_libraries(flash_cpu_mt PUBLIC flash_cpu_io OpenMP::OpenMP_CXX)
+
+# Benchmark executables
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-function(add_fa_executable target_name source_file)
-    add_executable(${target_name} ${source_file})
-    target_link_libraries(${target_name} PRIVATE Eigen3::Eigen)
-    target_include_directories(${target_name} PRIVATE ${EIGEN3_INCLUDE_DIR})
-    target_compile_definitions(${target_name} PRIVATE EIGEN_NO_DEBUG)
-    target_compile_options(${target_name}
-        PRIVATE
-            $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-O3 -ffast-math -march=native>
-            $<$<CXX_COMPILER_ID:MSVC>:/O2 /fp:fast /arch:AVX2>
-    )
-endfunction()
+add_executable(bench_naive_O3       tools/bench_naive.cpp)
+add_executable(bench_fa2_O3         tools/bench_fa2.cpp)
+add_executable(bench_fa2_profile_O3 tools/bench_fa2_profile.cpp)
+add_executable(bench_fa2_O3_mt      tools/bench_fa2_mt.cpp)
 
-add_fa_executable(naive_attn_O3 naive_attn.cpp)
-add_fa_executable(flash_attn2_O3 flash_attn2.cpp)
-add_fa_executable(flash_attn2_profile_O3 profile/flash_attn2_profile.cpp)
-add_fa_executable(flash_attn2_O3_mt flash_attn2_mt.cpp)
-target_link_libraries(flash_attn2_O3_mt PRIVATE OpenMP::OpenMP_CXX)
+target_link_libraries(bench_naive_O3       PRIVATE flash_cpu_st)
+target_link_libraries(bench_fa2_O3         PRIVATE flash_cpu_st)
+target_link_libraries(bench_fa2_profile_O3 PRIVATE flash_cpu_st)
+target_link_libraries(bench_fa2_O3_mt      PRIVATE flash_cpu_mt)

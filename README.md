@@ -1,29 +1,32 @@
 FlashAttention-2 on CPU
 =======================
-This repository contains several implementations of FlashAttention-2 forward pass on CPU in Python (NumPy, Numba), and C++ (Eigen).
-It was originally developed as a final project for a machine learning course.
+CPU implementations of the FlashAttention-2 forward pass in Python (NumPy, Numba)
+and C++ (Eigen3, single- and multi-threaded). Final project for a machine learning course.
+
+Report: https://drive.google.com/file/d/1Ui7b7OmlLXq72F-xsxJRqMYaqPPlKO0-/view?usp=drive_link
+
+```
+include/flash_attn/   C++ headers
+src/                  C++ implementations
+tools/                Benchmark runners (C++ and Python)
+flash_attn/           Python package (pure algorithm functions)
+data_generation.py    Generates Q/K/V testsets
+plot.py               Plots runtime CSVs
+run.sh                Full pipeline
+```
 
 Dependencies
 ------------
-- Python packages: numpy, numba, pandas, matplotlib
-- C++ libraries: Eigen3
+- **Python:** numpy, numba, pandas, matplotlib
+- **C++:** Eigen3 ≥ 3.3, OpenMP, CMake ≥ 3.16, C++17 compiler
 
-Key Files
----------
-- `data_generation.py`: Generates random testsets.
-- `naive_attn.py`, `naive_attn.cpp`: Naive attention implementations in Python and C++.
-- `flash_attn2.py`, `flash_attn2_jit.py`: FlashAttention-2 forward pass in NumPy and Numba (JIT).
-- `flash_attn2.cpp`, `flash_attn2_mt.cpp`: FlashAttention-2 forward pass in C++ using Eigen (single- and multi-threaded).
-- `profile/flash_attn2_profile.*`: Profiling scripts for runtime breakdown of major algorithmic steps.
-- `plot.py`: Generates all plots.
-
-Run all the experiments with:
---------
-
+Usage
+-----
 ```bash
-cmake -S . -B build
-cmake --build build
+cmake -S . -B build && cmake --build build --parallel
 bash run.sh
 ```
 
-Logs are saved to `outputs/<impl>/runtime.csv`; plots are saved in `outputs/plots/`.
+Logs go to `outputs/<impl>/runtime.csv`; Plots go to `outputs/plots/`
+
+Each benchmark resumes from existing CSV entries if interrupted.

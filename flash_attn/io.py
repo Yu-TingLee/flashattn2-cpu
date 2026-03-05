@@ -1,6 +1,7 @@
 import os
 import numpy as np
 
+
 def read_QKV(data_dir, T, d):
     total_elements = T * d
     for fname in ["Q", "Kt", "V"]:
