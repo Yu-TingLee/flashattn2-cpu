@@ -33,7 +33,7 @@ PROFILE_COLORS = {"line7": "#4C72B0", "line8": "#55A868", "line10": "#C44E52",
 def get_smart_ticks(y_data, candidates):
     if not y_data:
         return candidates
-    y_min, y_max = min(y_data), max(y_data)
+    y_min, y_max = min(min(y_data),90), max(y_data)
     low_tick = next((c for c in reversed(candidates) if c <= y_min), candidates[0])
     high_tick = next((c for c in candidates if c > y_max), candidates[-1])
     if y_max >= candidates[-1]:
@@ -48,8 +48,9 @@ def load_runtime_data():
     def load_and_agg(target_name, col_name):
         path = os.path.join("outputs", target_name, "runtime.csv")
         df = pd.read_csv(path)
-        merged = pd.merge(df, df_naive, on=["testset", "T", "d"], suffixes=("", "_naive"))
-        merged[col_name] = (merged["runtime"] / merged["runtime_naive"]) * 100
+        # CHANGED: Merge against df_cpp_o3 instead of df_naive to set the new baseline
+        merged = pd.merge(df, df_cpp_o3, on=["testset", "T", "d"], suffixes=("", "_cpp"))
+        merged[col_name] = (merged["runtime"] / merged["runtime_cpp"]) * 100
         return merged.groupby(["T", "d", "M_bytes"])[col_name].mean().reset_index()
     
     agg_jit = load_and_agg("fa2_jit", "pct_runtime_jit")
@@ -78,10 +79,9 @@ def setup_axis(ax, t_val, d_val, y_logscale=False):
     ax.set_xticks(X_TICKS)
     ax.tick_params(axis='both', labelsize=7)
     ax.grid(visible=True, which='major', linestyle='--', alpha=GRID_ALPHA)
-    ax.yaxis.set_minor_locator(FixedLocator([]))
     if y_logscale:
         ax.set_yscale('log')
-
+    ax.yaxis.set_minor_locator(FixedLocator([]))
 
 def add_split_legend(fig, handles, labels, y_pos_top=0.03, y_pos_bottom=0.01):
     if len(handles) == 5:
@@ -130,16 +130,16 @@ def plot_runtime_subplot(ax, agg_jit, agg_fa2, agg_fa2_cpp, agg_fa2_cpp_mt, df_c
             ax.plot(s_fa2_cpp_mt["M_bytes"]/1024, y, linewidth=LINEWIDTH,
                     label=IMPL_STYLES['fa2_cpp_mt']['label'], color=IMPL_STYLES['fa2_cpp_mt']['color'])
             y_data.extend(y)
-        if plot_flags['naive_py']:
-            ax.axhline(y=1, color=IMPL_STYLES['naive_py']['color'], 
+        if plot_flags['naive_py'] and not cpp_o3.empty and not py_sub.empty:
+            speedup = cpp_o3["runtime"].mean() / py_sub["runtime"].mean()
+            ax.axhline(y=speedup, color=IMPL_STYLES['naive_py']['color'], 
                        linestyle=IMPL_STYLES['naive_py']['linestyle'], linewidth=LINEWIDTH,
                        label=IMPL_STYLES['naive_py']['label'])
-        if plot_flags['naive_cpp'] and not cpp_o3.empty and not py_sub.empty:
-            speedup = py_sub["runtime"].mean() / cpp_o3["runtime"].mean()
-            ax.axhline(y=speedup, color=IMPL_STYLES['naive_cpp']['color'],
+            y_data.append(speedup)
+        if plot_flags['naive_cpp']:
+            ax.axhline(y=1, color=IMPL_STYLES['naive_cpp']['color'],
                        linestyle=IMPL_STYLES['naive_cpp']['linestyle'], linewidth=LINEWIDTH,
                        label=IMPL_STYLES['naive_cpp']['label'])
-            y_data.append(speedup)
     else:
         # Runtime plot (percentage)
         if plot_flags['jit'] and not s_jit.empty:
@@ -158,17 +158,16 @@ def plot_runtime_subplot(ax, agg_jit, agg_fa2, agg_fa2_cpp, agg_fa2_cpp_mt, df_c
             ax.plot(s_fa2_cpp_mt["M_bytes"]/1024, s_fa2_cpp_mt["pct_runtime_fa2_cpp_mt"], linewidth=LINEWIDTH,
                     label=IMPL_STYLES['fa2_cpp_mt']['label'], color=IMPL_STYLES['fa2_cpp_mt']['color'])
             y_data.extend(s_fa2_cpp_mt["pct_runtime_fa2_cpp_mt"])
-        if plot_flags['naive_py']:
-            ax.axhline(y=100, color=IMPL_STYLES['naive_py']['color'],
+        if plot_flags['naive_py'] and not cpp_o3.empty and not py_sub.empty:
+            rel_py = (py_sub["runtime"].mean() / cpp_o3["runtime"].mean()) * 100
+            ax.axhline(y=rel_py, color=IMPL_STYLES['naive_py']['color'],
                        linestyle=IMPL_STYLES['naive_py']['linestyle'], linewidth=LINEWIDTH,
                        label=IMPL_STYLES['naive_py']['label'])
-        if plot_flags['naive_cpp'] and not cpp_o3.empty and not py_sub.empty:
-            rel_cpp = (cpp_o3["runtime"].mean() / py_sub["runtime"].mean()) * 100
-            ax.axhline(y=rel_cpp, color=IMPL_STYLES['naive_cpp']['color'],
+            y_data.append(rel_py)
+        if plot_flags['naive_cpp']:
+            ax.axhline(y=100, color=IMPL_STYLES['naive_cpp']['color'],
                        linestyle=IMPL_STYLES['naive_cpp']['linestyle'], linewidth=LINEWIDTH,
                        label=IMPL_STYLES['naive_cpp']['label'])
-            y_data.append(rel_cpp)
-    
     return y_data
 
 
@@ -177,7 +176,7 @@ def set_y_ticks(ax, y_data, is_speedup=False):
         candidates = [0.01, 0.1, 0.5, 1, 5, 10, 50, 100, 150]
         suffix = 'x'
     else:
-        candidates = [0.5, 1, 5, 25, 50, 100, 200, 400]
+        candidates = [0.5, 1, 5, 25, 50, 100, 200, 400, 800]
         suffix = '%'
     
     ticks = get_smart_ticks(y_data, candidates)
