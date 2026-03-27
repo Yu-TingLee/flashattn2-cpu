@@ -5,16 +5,6 @@ and C++ (Eigen3, single- and multi-threaded). Final project for a machine learni
 
 Report: https://drive.google.com/file/d/1Ui7b7OmlLXq72F-xsxJRqMYaqPPlKO0-/view?usp=drive_link
 
-```
-include/flash_attn/   C++ headers
-src/                  C++ implementations
-tools/                Benchmark runners (C++ and Python)
-flash_attn/           Python package (pure algorithm functions)
-data_generation.py    Generates Q/K/V testsets
-plot.py               Plots runtime CSVs
-run.sh                Full pipeline
-```
-
 Dependencies
 ------------
 - **Python:** numpy, numba, pandas, matplotlib
