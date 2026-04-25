@@ -1,4 +1,6 @@
 #pragma once
+#include <cstdint>
+#include <vector>
 #include "flash_attn/types.hpp"
 
 namespace flash_attn {
@@ -15,6 +17,20 @@ MatrixXfRM fa2_forward_causal(const MatrixXfRM& Q, const MatrixXfRM& Kt,
 // Query blocks are distributed over OpenMP threads.
 MatrixXfRM fa2_forward_mt(const MatrixXfRM& Q, const MatrixXfRM& Kt,
                           const MatrixXfRM& V, int T, int d, int M_bytes, float scale);
+
+enum class Schedule { Static, Dynamic, WorkStealing };
+
+struct ThreadMetrics {
+    int64_t blocks_processed = 0;
+    double  wall_time_sec    = 0.0;
+    int64_t steal_attempts   = 0;
+    int64_t steal_successes  = 0;
+};
+
+MatrixXfRM fa2_forward_causal_mt(const MatrixXfRM& Q, const MatrixXfRM& Kt,
+                                 const MatrixXfRM& V, int T, int d, int M_bytes,
+                                 float scale, Schedule sched, int num_threads,
+                                 std::vector<ThreadMetrics>& metrics);
 
 // Wall time per step of the inner loop, in seconds.
 struct ProfileData {

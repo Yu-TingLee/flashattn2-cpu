@@ -11,6 +11,7 @@ endif()
 
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 find_package(OpenMP REQUIRED)
+find_package(Threads REQUIRED)
 
 add_library(flash_attn_compile_options INTERFACE)
 target_compile_definitions(flash_attn_compile_options INTERFACE EIGEN_NO_DEBUG)
@@ -35,6 +36,10 @@ target_link_libraries(flash_attn_st PUBLIC flash_attn_io)
 add_library(flash_attn_mt STATIC src/flash_attention_mt.cpp)
 target_link_libraries(flash_attn_mt PUBLIC flash_attn_io OpenMP::OpenMP_CXX)
 
+add_library(flash_attn_causal_mt STATIC src/flash_attention_causal_mt.cpp)
+target_link_libraries(flash_attn_causal_mt PUBLIC flash_attn_st OpenMP::OpenMP_CXX)
+target_link_libraries(flash_attn_causal_mt PRIVATE Threads::Threads)
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 foreach(bench bench_naive bench_naive_causal bench_fa2 bench_fa2_causal bench_fa2_profile)
@@ -44,3 +49,6 @@ endforeach()
 
 add_executable(bench_fa2_mt benchmarks/bench_fa2_mt.cpp)
 target_link_libraries(bench_fa2_mt PRIVATE flash_attn_mt)
+
+add_executable(bench_fa2_causal_mt benchmarks/bench_fa2_causal_mt.cpp)
+target_link_libraries(bench_fa2_causal_mt PRIVATE flash_attn_causal_mt)
