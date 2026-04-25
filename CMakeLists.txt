@@ -37,7 +37,7 @@ target_link_libraries(flash_attn_mt PUBLIC flash_attn_io OpenMP::OpenMP_CXX)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-foreach(bench bench_naive bench_fa2 bench_fa2_profile)
+foreach(bench bench_naive bench_naive_causal bench_fa2 bench_fa2_causal bench_fa2_profile)
     add_executable(${bench} benchmarks/${bench}.cpp)
     target_link_libraries(${bench} PRIVATE flash_attn_st)
 endforeach()

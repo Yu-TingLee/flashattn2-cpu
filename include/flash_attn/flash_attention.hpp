@@ -9,6 +9,9 @@ namespace flash_attn {
 MatrixXfRM fa2_forward(const MatrixXfRM& Q, const MatrixXfRM& Kt,
                        const MatrixXfRM& V, int T, int d, int M_bytes, float scale);
 
+MatrixXfRM fa2_forward_causal(const MatrixXfRM& Q, const MatrixXfRM& Kt,
+                              const MatrixXfRM& V, int T, int d, int M_bytes, float scale);
+
 // Query blocks are distributed over OpenMP threads.
 MatrixXfRM fa2_forward_mt(const MatrixXfRM& Q, const MatrixXfRM& Kt,
                           const MatrixXfRM& V, int T, int d, int M_bytes, float scale);

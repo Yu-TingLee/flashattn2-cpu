@@ -9,4 +9,7 @@ namespace flash_attn {
 MatrixXfRM naive_attention(const MatrixXfRM& Q, const MatrixXfRM& Kt,
                            const MatrixXfRM& V, float scale);
 
+MatrixXfRM naive_attention_causal(const MatrixXfRM& Q, const MatrixXfRM& Kt,
+                                  const MatrixXfRM& V, float scale);
+
 }  // namespace flash_attn

@@ -10,7 +10,7 @@ MatrixXfRM fa2_forward_mt(const MatrixXfRM& Q, const MatrixXfRM& Kt,
 
     #pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < t.Tr; ++i)
-        process_query_block(i, t, T, Q, Kt, V, scale, O);
+        process_query_block<false>(i, t, T, Q, Kt, V, scale, O);
     return O;
 }
 

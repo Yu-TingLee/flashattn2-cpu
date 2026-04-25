@@ -1,6 +1,7 @@
 #pragma once
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include "flash_attn/types.hpp"
 
 namespace flash_attn {
@@ -25,6 +26,7 @@ Tiling make_tiling(int T, int d, int M_bytes) {
 }
 
 // Runs the FA-2 inner loop for query block i and writes its rows of O.
+template <bool Causal>
 void process_query_block(int i, const Tiling& t, int T,
                          const MatrixXfRM& Q, const MatrixXfRM& Kt,
                          const MatrixXfRM& V, float scale, MatrixXfRM& O) {
@@ -35,7 +37,10 @@ void process_query_block(int i, const Tiling& t, int T,
     Eigen::VectorXf m = Eigen::VectorXf::Constant(cur_I, -INFINITY);
     MatrixXfRM Q_i = Q.middleRows(row_start, cur_I);
 
-    for (int j = 0; j < t.Tc; ++j) {
+    // Under a causal mask, key blocks that start past the last query row are skipped.
+    const int j_end = Causal ? std::min(t.Tc, ((i + 1) * t.I + t.J - 1) / t.J) : t.Tc;
+
+    for (int j = 0; j < j_end; ++j) {
         const int col_start = j * t.J;
         const int cur_J     = std::min(col_start + t.J, T) - col_start;
 
@@ -44,6 +49,18 @@ void process_query_block(int i, const Tiling& t, int T,
 
         MatrixXfRM S = Q_i * Kt_j;
         S *= scale;
+
+        if constexpr (Causal) {
+            const int diag_offset = row_start - col_start;
+            if (diag_offset < cur_J) {
+                for (int r = 0; r < cur_I; ++r) {
+                    const int first_masked = std::max(0, r + diag_offset + 1);
+                    if (first_masked < cur_J)
+                        S.row(r).tail(cur_J - first_masked)
+                            .fill(-std::numeric_limits<float>::infinity());
+                }
+            }
+        }
 
         Eigen::VectorXf m_new = m.cwiseMax(S.rowwise().maxCoeff());
         Eigen::VectorXf alpha = (m - m_new).array().exp();

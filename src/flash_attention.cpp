@@ -8,7 +8,16 @@ MatrixXfRM fa2_forward(const MatrixXfRM& Q, const MatrixXfRM& Kt,
     const Tiling t = make_tiling(T, d, M_bytes);
     MatrixXfRM O = MatrixXfRM::Zero(T, d);
     for (int i = 0; i < t.Tr; ++i)
-        process_query_block(i, t, T, Q, Kt, V, scale, O);
+        process_query_block<false>(i, t, T, Q, Kt, V, scale, O);
+    return O;
+}
+
+MatrixXfRM fa2_forward_causal(const MatrixXfRM& Q, const MatrixXfRM& Kt,
+                              const MatrixXfRM& V, int T, int d, int M_bytes, float scale) {
+    const Tiling t = make_tiling(T, d, M_bytes);
+    MatrixXfRM O = MatrixXfRM::Zero(T, d);
+    for (int i = 0; i < t.Tr; ++i)
+        process_query_block<true>(i, t, T, Q, Kt, V, scale, O);
     return O;
 }
 
