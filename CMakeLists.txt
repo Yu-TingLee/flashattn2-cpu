@@ -13,7 +13,6 @@ find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 find_package(OpenMP REQUIRED)
 
 # Shared compile options
-# INTERFACE library: propagates compile flags to every consumer transitively.
 add_library(flash_compile_opts INTERFACE)
 target_compile_definitions(flash_compile_opts INTERFACE EIGEN_NO_DEBUG)
 target_compile_options(flash_compile_opts INTERFACE
@@ -37,20 +36,31 @@ add_library(flash_cpu_st STATIC
 target_link_libraries(flash_cpu_st PUBLIC flash_cpu_io)
 
 # Multi-threaded algorithm library
-# Provides: fa2_forward (MT, OpenMP) — separate target to avoid symbol collision
+# Provides: fa2_forward (MT, OpenMP)
 # with the ST version. bench_fa2_mt links this; all other tools link flash_cpu_st.
 add_library(flash_cpu_mt STATIC src/attn_mt.cpp)
 target_link_libraries(flash_cpu_mt PUBLIC flash_cpu_io OpenMP::OpenMP_CXX)
 
+# Multi-threaded causal FA-2 library
+# Provides: fa2_forward_causal_mt (static/dynamic/work-stealing)
+# Also provides: naive_attention_causal, fa2_forward_causal (from flash_cpu_st)
+add_library(flash_cpu_mt_causal STATIC src/attn_mt_causal.cpp)
+target_link_libraries(flash_cpu_mt_causal PUBLIC flash_cpu_st OpenMP::OpenMP_CXX)
+target_link_libraries(flash_cpu_mt_causal PRIVATE pthread)
+
 # Benchmark executables
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-add_executable(bench_naive_O3       tools/bench_naive.cpp)
-add_executable(bench_fa2_O3         tools/bench_fa2.cpp)
-add_executable(bench_fa2_profile_O3 tools/bench_fa2_profile.cpp)
-add_executable(bench_fa2_O3_mt      tools/bench_fa2_mt.cpp)
+add_executable(bench_naive_O3            tools/bench_naive.cpp)
+add_executable(bench_naive_causal_O3     tools/bench_naive_causal.cpp)
+add_executable(bench_fa2_O3             tools/bench_fa2.cpp)
+add_executable(bench_fa2_profile_O3     tools/bench_fa2_profile.cpp)
+add_executable(bench_fa2_O3_mt          tools/bench_fa2_mt.cpp)
+add_executable(bench_fa2_causal_mt_O3   tools/bench_fa2_causal_mt.cpp)
 
-target_link_libraries(bench_naive_O3       PRIVATE flash_cpu_st)
-target_link_libraries(bench_fa2_O3         PRIVATE flash_cpu_st)
-target_link_libraries(bench_fa2_profile_O3 PRIVATE flash_cpu_st)
-target_link_libraries(bench_fa2_O3_mt      PRIVATE flash_cpu_mt)
+target_link_libraries(bench_naive_O3          PRIVATE flash_cpu_st)
+target_link_libraries(bench_naive_causal_O3   PRIVATE flash_cpu_st)
+target_link_libraries(bench_fa2_O3           PRIVATE flash_cpu_st)
+target_link_libraries(bench_fa2_profile_O3   PRIVATE flash_cpu_st)
+target_link_libraries(bench_fa2_O3_mt        PRIVATE flash_cpu_mt)
+target_link_libraries(bench_fa2_causal_mt_O3 PRIVATE flash_cpu_mt_causal)

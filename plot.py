@@ -14,29 +14,64 @@ X_LIMITS   = (32, 1024)
 
 IMPL_STYLES = {
     'jit':        {'label': 'FA-2 (Numba)',            'color': None},
-    'fa2':        {'label': 'FA-2 (NumPy)',             'color': 'green'},
+    'fa2':        {'label': 'FA-2 (NumPy)',             'color': 'yellow'},
     'fa2_cpp':    {'label': 'FA-2 (C++, ST)',           'color': 'purple'},
-    'fa2_cpp_mt': {'label': 'FA-2 (C++, MT)',           'color': 'yellow'},
+    'fa2_cpp_mt': {'label': 'FA-2 (C++, MT)',           'color': 'green'},
     'naive_py':   {'label': 'Naive Attention (Python)', 'color': 'r',      'linestyle': '--'},
-    'naive_cpp':  {'label': 'Naive Attention (C++)',    'color': 'orange', 'linestyle': '--'},
+    'naive_cpp':  {'label': 'Native Attention (C++)',    'color': 'orange', 'linestyle': '--'},
+}
+
+CAUSAL_STYLES = {
+    'naive_causal_cpp':  {'label': 'Naive Causal (C++)',                    'color': 'orange',   'linestyle': '--'},
+    'naive_causal_py':   {'label': 'Naive Causal (Python)',                 'color': 'r',        'linestyle': '--'},
+    'static':            {'label': 'Causal FA-2 (C++, static)',             'color': 'purple'},
+    'dynamic':           {'label': 'Causal FA-2 (C++, dynamic)',            'color': 'green'},
+    'work_stealing':     {'label': 'Causal FA-2 (C++, work-stealing)',      'color': 'steelblue'},
 }
 
 PROFILE_SEGMENTS = ["line7", "line8", "line10", "line11", "others"]
-PROFILE_LABELS   = {"line7": "Line 7",  "line8": "Line 8",  "line10": "Line 10",
-                    "line11": "Line 11", "others": "Others"}
+PROFILE_LABELS   = {
+    "line7":  r"Line 7 (Load $\mathbf{K}$, $\mathbf{V}$)",
+    "line8":  r"Line 8 (Compute $\mathbf{S}$)",
+    "line10": r"Line 10 (Online softmax)",
+    "line11": r"Line 11 (Compute $\mathbf{O}$ in inner loop)",
+    "others": r"Others",
+}
 PROFILE_COLORS   = {"line7": "#4C72B0", "line8": "#55A868", "line10": "#C44E52",
                     "line11": "#8172B3", "others": "#CCB974"}
 
 
-def get_smart_ticks(y_data, candidates):
+def get_smart_ticks(y_data, candidates, pad_top_if_close=False, top_close_ratio=0.9, max_ticks=6):
     if not y_data:
         return candidates
     y_min, y_max = min(min(y_data), 90), max(y_data)
     low_tick  = next((c for c in reversed(candidates) if c <= y_min), candidates[0])
-    high_tick = next((c for c in candidates if c > y_max), candidates[-1])
-    if y_max >= candidates[-1]:
-        high_tick = candidates[-1]
-    return [c for c in candidates if low_tick <= c <= high_tick]
+    high_tick = next((c for c in candidates if c >= y_max), candidates[-1])
+    if pad_top_if_close:
+        try:
+            idx = candidates.index(high_tick)
+            if high_tick > 0 and (y_max / high_tick) >= top_close_ratio and idx < len(candidates) - 1:
+                high_tick = candidates[idx + 1]
+        except ValueError:
+            pass
+    ticks = [c for c in candidates if low_tick <= c <= high_tick]
+    if len(ticks) <= max_ticks:
+        return ticks
+
+    idxs = np.linspace(0, len(ticks) - 1, max_ticks, dtype=int).tolist()
+
+    # Keep important reference ticks when they exist in range.
+    for required_tick in (1, 10):
+        if required_tick in ticks:
+            req_idx = ticks.index(required_tick)
+            if req_idx not in idxs:
+                interior = [p for p, idx in enumerate(idxs) if idx not in (0, len(ticks) - 1)]
+                if interior:
+                    repl_pos = min(interior, key=lambda p: abs(idxs[p] - req_idx))
+                    idxs[repl_pos] = req_idx
+
+    idxs = sorted(set(idxs))
+    return [ticks[i] for i in idxs]
 
 
 def load_runtime_data():
@@ -91,6 +126,28 @@ def add_split_legend(fig, handles, labels, y_pos_top=0.03, y_pos_bottom=0.01):
         fig.legend(handles, labels, bbox_to_anchor=(0.52, y_pos_top), ncol=ncol, **kwargs)
 
 
+def add_speedup_legend(fig, handles, labels, y_pos_top=0.03, y_pos_bottom=0.01):
+    legend_map = dict(zip(labels, handles))
+    top_row = [legend_map[label] for label in [
+        'FA-2 (C++, MT)',
+        'FA-2 (C++, ST)',
+        'Native Attention (C++)',
+    ] if label in legend_map]
+    bottom_row = [legend_map[label] for label in [
+        'FA-2 (Numba)',
+        'FA-2 (NumPy)',
+        'Naive Attention (Python)',
+    ] if label in legend_map]
+    kwargs = dict(fontsize=7, loc='lower center', columnspacing=0.6,
+                  handlelength=1.5, frameon=False)
+    if top_row:
+        fig.legend(top_row, [handle.get_label() for handle in top_row],
+                   bbox_to_anchor=(0.52, y_pos_top), ncol=len(top_row), **kwargs)
+    if bottom_row:
+        fig.legend(bottom_row, [handle.get_label() for handle in bottom_row],
+                   bbox_to_anchor=(0.52, y_pos_bottom), ncol=len(bottom_row), **kwargs)
+
+
 def plot_runtime_subplot(ax, agg_jit, agg_fa2, agg_fa2_cpp, agg_fa2_cpp_mt, df_cpp_o3, df_naive,
                          t_val, d_val, plot_flags, is_speedup=False):
     series = [
@@ -134,13 +191,33 @@ def plot_runtime_subplot(ax, agg_jit, agg_fa2, agg_fa2_cpp, agg_fa2_cpp_mt, df_c
 
 def set_y_ticks(ax, y_data, is_speedup=False):
     if is_speedup:
-        candidates, suffix = [0.01, 0.1, 0.5, 1, 5, 10, 50, 100, 150], 'x'
+        candidates, suffix = [0.05, 0.1, 0.5, 1, 2.5, 5, 10, 20, 50], 'x'
     else:
         candidates, suffix = [0.5, 1, 5, 25, 50, 100, 200, 400, 800], '%'
-    ticks = get_smart_ticks(y_data, candidates)
+    ticks = get_smart_ticks(y_data, candidates, pad_top_if_close=is_speedup, top_close_ratio=0.88)
     ax.set_ylim(min(ticks), max(ticks))
     ax.set_yticks(ticks)
     ax.set_yticklabels([f'{t}{suffix}' for t in ticks])
+
+
+def set_y_ticks_load_imbalance(ax, y_data):
+    candidates = sorted(set([1] + list(range(0, 11, 2))))
+    if not y_data:
+        ax.set_ylim(0, 2)
+        ax.set_yticks([0, 1, 2])
+        ax.set_yticklabels(['0', '1', '2'])
+        return
+
+    y_max = max(1.0, max(y_data))
+    high_tick = next((c for c in candidates if c >= y_max), candidates[-1])
+    if high_tick > 0 and (y_max / high_tick) >= 0.88 and high_tick < candidates[-1]:
+        idx = candidates.index(high_tick)
+        high_tick = candidates[idx + 1]
+
+    ticks = [c for c in candidates if c <= high_tick]
+    ax.set_ylim(0, high_tick)
+    ax.set_yticks(ticks)
+    ax.set_yticklabels([f'{t}' for t in ticks])
 
 
 def _fill_subplots(axes, nrows, T_values, d_values, subplot_args, flags, is_speedup, logscale):
@@ -162,7 +239,7 @@ def plot_performance(
     also_plot_speedup=True,
     plot_jit_speedup=None, plot_fa2_speedup=None, plot_fa2_cpp_speedup=None,
     plot_fa2_cpp_mt_speedup=None, plot_naive_py_speedup=None, plot_naive_cpp_speedup=None,
-    y_logscale=False, y_logscale_speedup=False
+    y_logscale=True, y_logscale_speedup=True
 ):
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -192,35 +269,33 @@ def plot_performance(
     subplot_args = (agg_jit, agg_fa2, agg_fa2_cpp, agg_fa2_cpp_mt, df_cpp_o3, df_naive)
 
     # Relative runtime plot
-    fig, axes = plt.subplots(nrows, ncols, figsize=(6.5, nrows * 2), sharex=True, sharey=False)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(6.5, nrows * 1.6), sharex=True, sharey=False)
     legend_ax = _fill_subplots(axes, nrows, T_values, d_values, subplot_args,
                                 plot_flags, is_speedup=False, logscale=y_logscale)
     fig.text(0.52, 0.07, "Cache Budget M (KB)",  ha='center', va='center', fontsize=9)
     fig.text(0.02, 0.5,  "Relative Runtime (%)", ha='center', va='center', rotation='vertical', fontsize=9)
     if legend_ax:
         h, l = legend_ax.get_legend_handles_labels()
-        add_split_legend(fig, h, l)
+        add_speedup_legend(fig, h, l, y_pos_top=0.035, y_pos_bottom=0.015)
     plt.tight_layout(rect=[0.04, 0.08, 1, 0.98])
-    plt.savefig(os.path.join(OUTPUT_DIR, "relative_runtime.png"), dpi=600)
+    plt.savefig(os.path.join(OUTPUT_DIR, "relative_runtime.png"), dpi=600, bbox_inches='tight', pad_inches=0.05)
     plt.close()
 
     # Speedup plot
     if also_plot_speedup:
-        fig2, axes2 = plt.subplots(nrows, ncols, figsize=(6.5, nrows * 2), sharex=True, sharey=False)
+        fig2, axes2 = plt.subplots(nrows, ncols, figsize=(6.5, nrows * 1.6), sharex=True, sharey=False)
         legend_ax2  = _fill_subplots(axes2, nrows, T_values, d_values, subplot_args,
                                       speedup_flags, is_speedup=True, logscale=y_logscale_speedup)
         fig2.text(0.52, 0.07, "Cache Budget M (KiB)",     ha='center', va='center', fontsize=9)
         fig2.text(0.02, 0.5,  "Speedup (x-times faster)", ha='center', va='center', rotation='vertical', fontsize=9)
         if legend_ax2:
             h, l = legend_ax2.get_legend_handles_labels()
-            add_split_legend(fig2, h, l)
+            add_speedup_legend(fig2, h, l, y_pos_top=0.035, y_pos_bottom=0.015)
         plt.tight_layout(rect=[0.04, 0.08, 1, 0.98])
-        plt.savefig(os.path.join(OUTPUT_DIR, "speedup_xtimes.png"), dpi=600)
+        plt.savefig(os.path.join(OUTPUT_DIR, "speedup.png"), dpi=600, bbox_inches='tight', pad_inches=0.05)
         plt.close()
 
     _write_summary(agg_jit, agg_fa2, agg_fa2_cpp, agg_fa2_cpp_mt)
-    _plot_combined(agg_jit, agg_fa2, agg_fa2_cpp, agg_fa2_cpp_mt, df_cpp_o3, df_naive,
-                   T_values, d_values, plot_flags, speedup_flags, y_logscale, y_logscale_speedup)
 
 
 def _write_summary(agg_jit, agg_fa2, agg_fa2_cpp, agg_fa2_cpp_mt):
@@ -251,34 +326,6 @@ def _write_summary(agg_jit, agg_fa2, agg_fa2_cpp, agg_fa2_cpp_mt):
 
     with open(os.path.join(OUTPUT_DIR, "summary.txt"), "w") as f:
         f.write("\n".join(summary_lines))
-
-
-def _plot_combined(agg_jit, agg_fa2, agg_fa2_cpp, agg_fa2_cpp_mt, df_cpp_o3, df_naive,
-                   T_values, d_values, plot_flags, speedup_flags, y_logscale, y_logscale_speedup):
-    nrows, ncols  = len(T_values), len(d_values)
-    fig, axes     = plt.subplots(nrows, ncols * 2, figsize=(13, nrows * 2), sharex=True, sharey=False)
-    subplot_args  = (agg_jit, agg_fa2, agg_fa2_cpp, agg_fa2_cpp_mt, df_cpp_o3, df_naive)
-
-    left  = axes[:, :ncols] if nrows > 1 else axes[:ncols]
-    right = axes[:, ncols:] if nrows > 1 else axes[ncols:]
-
-    legend_ax = _fill_subplots(left,  nrows, T_values, d_values, subplot_args,
-                                plot_flags,    is_speedup=False, logscale=y_logscale)
-    _fill_subplots(            right, nrows, T_values, d_values, subplot_args,
-                                speedup_flags, is_speedup=True,  logscale=y_logscale_speedup)
-
-    fig.text(0.515, 0.045, "Cache Budget M (KiB)",      ha='center', va='center', fontsize=14)
-    fig.text(0.015, 0.5,   "Relative Runtime (%)",      ha='center', va='center', rotation='vertical', fontsize=14)
-    fig.text(0.512, 0.5,   "Speedup (x-times faster)",  ha='center', va='center', rotation='vertical', fontsize=14)
-
-    if legend_ax:
-        h, l = legend_ax.get_legend_handles_labels()
-        fig.legend(h, l, fontsize=11, loc='lower center', bbox_to_anchor=(0.51, 0),
-                   ncol=len(h), columnspacing=0.8, handlelength=1.5, frameon=False)
-
-    plt.tight_layout(rect=[0.02, 0.06, 1, 0.98], w_pad=2.5)
-    plt.savefig(os.path.join(OUTPUT_DIR, "combined_runtime_speedup.png"), dpi=600)
-    plt.close()
 
 
 def _draw_pie(ax, row_data, pct_label, fontsize=6, radius=1.0):
@@ -338,44 +385,6 @@ def plot_profile_breakdown(opt_flag="O3", include_python=True, include_cpp=True)
     def pct_label(pct):
         return f"{pct:.0f}%" if pct >= 5 else ""
 
-    for t_val in t_values:
-        subset   = agg[agg["T"] == t_val]
-        if subset.empty:
-            continue
-        unique_m = sorted(subset["M_bytes"].unique())[:max_cols]
-
-        fig, axes = plt.subplots(len(impl_rows), 3, figsize=(3.5, len(impl_rows) * 1.6))
-        axes = np.atleast_2d(axes)
-        fig.patch.set_facecolor('white')
-
-        for row_idx, impl in enumerate(impl_rows):
-            impl_short = "Python" if "Python" in impl else "C++"
-            for col_idx in range(3):
-                ax = axes[row_idx, col_idx]
-                ax.set_facecolor('white')
-                if col_idx < len(unique_m):
-                    m_val    = unique_m[col_idx]
-                    row_data = subset[(subset["impl"] == impl) & (subset["M_bytes"] == m_val)]
-                    _draw_pie(ax, row_data, pct_label, fontsize=6)
-                    if row_idx == 0:
-                        ax.set_title(f"M={int(m_val/1024)} KiB", fontsize=8, pad=2)
-                else:
-                    ax.axis('off')
-                if col_idx == 0:
-                    ax.set_ylabel(impl_short, fontsize=8, labelpad=8)
-
-        fig.text(0.52, 0.97, f"T={int(t_val)}", ha='center', va='center', fontsize=9)
-        if t_val == max(t_values):
-            fig.legend(segment_handles, legend_labels, loc='lower center',
-                       bbox_to_anchor=(0.52, 0.01), ncol=len(segment_handles),
-                       fontsize=7, frameon=False, handlelength=1.2, columnspacing=0.8)
-            plt.tight_layout(rect=[0.04, 0.06, 0.99, 0.93], pad=0.3, w_pad=0.1, h_pad=0.3)
-        else:
-            plt.tight_layout(rect=[0.04, 0, 0.99, 0.93], pad=0.3, w_pad=0.1)
-        plt.savefig(os.path.join(OUTPUT_DIR, f"profile_T{int(t_val)}.png"), dpi=600,
-                    bbox_inches='tight', pad_inches=0.02)
-        plt.close()
-
     _plot_combined_profile(agg, t_values, impl_rows, segment_handles, legend_labels,
                            max_cols, pct_label)
 
@@ -386,7 +395,7 @@ def _plot_combined_profile(agg, t_values, impl_rows, segment_handles, legend_lab
     n_impl       = len(impl_rows)
     n_cols_total = n_t * max_cols
 
-    fig, axes = plt.subplots(n_impl, n_cols_total, figsize=(13, n_impl * 2.2))
+    fig, axes = plt.subplots(n_impl, n_cols_total, figsize=(4.0, n_impl * 0.8))
     axes = np.atleast_2d(axes)
     fig.patch.set_facecolor('white')
 
@@ -406,13 +415,13 @@ def _plot_combined_profile(agg, t_values, impl_rows, segment_handles, legend_lab
                 if m_idx < len(unique_m):
                     m_val    = unique_m[m_idx]
                     row_data = subset[(subset["impl"] == impl) & (subset["M_bytes"] == m_val)]
-                    _draw_pie(ax, row_data, pct_label, fontsize=9, radius=1.3)
+                    _draw_pie(ax, row_data, pct_label, fontsize=3, radius=1.3)
                     if impl_idx == 0:
-                        ax.set_title(f"M={int(m_val/1024)} KiB", fontsize=10, pad=4)
+                        ax.set_title(f"M={int(m_val/1024)} KiB", fontsize=3, pad=1)
                 else:
                     ax.axis('off')
                 if global_col == 0:
-                    ax.set_ylabel(impl_short, fontsize=10, labelpad=12)
+                    ax.set_ylabel(impl_short, fontsize=3, labelpad=3)
 
     plt.subplots_adjust(left=0.04, right=0.99, top=0.82, bottom=0.14, wspace=0.05, hspace=0.0)
     fig.canvas.draw()
@@ -422,21 +431,230 @@ def _plot_combined_profile(agg, t_values, impl_rows, segment_handles, legend_lab
         bbox_left  = axes[0, col_offset].get_position()
         bbox_right = axes[0, col_offset + max_cols - 1].get_position()
         center_x   = (bbox_left.x0 + bbox_right.x1) / 2
-        fig.text(center_x - 0.003, 0.91, f"T={int(t_val)}", ha='center', va='center', fontsize=12)
+        fig.text(center_x - 0.003, 0.91, f"T={int(t_val)}", ha='center', va='center', fontsize=4)
         if t_idx < n_t - 1:
             bbox_next = axes[0, col_offset + max_cols].get_position()
             sep_x     = (bbox_right.x1 + bbox_next.x0) / 2
             fig.add_artist(plt.Line2D([sep_x, sep_x], [0.16, 0.82],
-                                      transform=fig.transFigure, color='gray', linewidth=1.5))
+                                      transform=fig.transFigure, color='gray', linewidth=0.75))
 
     fig.legend(segment_handles, legend_labels, loc='lower center', bbox_to_anchor=(0.52, 0.01),
-               ncol=len(segment_handles), fontsize=10, frameon=False,
+               ncol=len(segment_handles), fontsize=3, frameon=False,
                handlelength=1.8, columnspacing=1.2)
 
     plt.savefig(os.path.join(OUTPUT_DIR, "profile.png"), dpi=600, bbox_inches='tight', pad_inches=0.03)
     plt.close()
 
 
+def plot_causal_speedup(opt="O3", num_threads_list=(16,), y_logscale=True):
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    naive_path = os.path.join("outputs", f"naive_causal_cpp_{opt}", "runtime.csv")
+    if not os.path.exists(naive_path):
+        print(f"Warning: missing {naive_path}, skipping causal plots.")
+        return
+    df_naive = pd.read_csv(naive_path)
+
+    naive_py_path = os.path.join("outputs", "naive_causal_attn", "runtime.csv")
+    df_naive_py = pd.read_csv(naive_py_path) if os.path.exists(naive_py_path) else None
+
+    for nt in num_threads_list:
+        schedules_data = {}
+        for sched in ('static', 'dynamic', 'work_stealing'):
+            path = os.path.join("outputs", f"fa2_causal_{opt}_mt_{sched}_t{nt}", "runtime.csv")
+            if not os.path.exists(path):
+                schedules_data[sched] = pd.DataFrame()
+                continue
+            df = pd.read_csv(path)
+            merged = pd.merge(df, df_naive, on=["testset", "T", "d"], suffixes=("", "_naive"))
+            merged["speedup"] = merged["runtime_naive"] / merged["runtime"]
+            schedules_data[sched] = (merged
+                .groupby(["T", "d", "M_bytes"])["speedup"]
+                .mean()
+                .reset_index())
+
+        non_empty = [v for v in schedules_data.values() if not v.empty]
+        if not non_empty:
+            print(f"No causal MT data for num_threads={nt}, skipping.")
+            continue
+
+        T_values = get_unique_values(non_empty, "T")
+        d_values = get_unique_values(non_empty, "d")
+        nrows, ncols = len(T_values), len(d_values)
+
+        fig, axes = plt.subplots(nrows, ncols, figsize=(6.5, nrows * 1.6), sharex=True, sharey=False)
+        axes = np.atleast_2d(axes)
+
+        sched_handles = {}
+        h_cpp_naive = None
+        h_py_naive  = None
+
+        for row, t_val in enumerate(T_values):
+            for col, d_val in enumerate(d_values):
+                ax     = axes[row, col]
+                y_data = [1]
+
+                style = CAUSAL_STYLES['naive_causal_cpp']
+                h = ax.axhline(y=1, color=style['color'], linestyle=style['linestyle'],
+                               linewidth=LINEWIDTH, label=style['label'])
+                if h_cpp_naive is None:
+                    h_cpp_naive = h
+
+                if df_naive_py is not None:
+                    cpp_sub = filter_data(df_naive, t_val, d_val)
+                    py_sub  = filter_data(df_naive_py, t_val, d_val)
+                    if not cpp_sub.empty and not py_sub.empty:
+                        y_py = cpp_sub["runtime"].mean() / py_sub["runtime"].mean()
+                        style_py = CAUSAL_STYLES['naive_causal_py']
+                        h = ax.axhline(y=y_py, color=style_py['color'],
+                                       linestyle=style_py['linestyle'],
+                                       linewidth=LINEWIDTH, label=style_py['label'])
+                        if h_py_naive is None:
+                            h_py_naive = h
+                        y_data.append(y_py)
+
+                for sched in ('static', 'dynamic', 'work_stealing'):
+                    agg = schedules_data[sched]
+                    if agg.empty:
+                        continue
+                    s = filter_data(agg, t_val, d_val).sort_values("M_bytes")
+                    if s.empty:
+                        continue
+                    style  = CAUSAL_STYLES[sched]
+                    h, = ax.plot(s["M_bytes"] / 1024, s["speedup"],
+                                 color=style['color'], linewidth=LINEWIDTH, label=style['label'])
+                    sched_handles.setdefault(sched, h)
+                    y_data.extend(s["speedup"].tolist())
+
+                setup_axis(ax, t_val, d_val, y_logscale)
+                set_y_ticks(ax, y_data, is_speedup=True)
+
+        fig.text(0.52, 0.11, "Cache Budget M (KiB)",              ha='center', va='center', fontsize=9)
+        fig.text(0.02, 0.5,  "Speedup (x-times faster)", ha='center', va='center',
+                 rotation='vertical', fontsize=9)
+
+        ordered_handles = [sched_handles[s] for s in ('static', 'dynamic', 'work_stealing')
+                           if s in sched_handles]
+        ordered_handles.extend([h for h in (h_cpp_naive, h_py_naive) if h is not None])
+        ordered_labels = [h.get_label() for h in ordered_handles]
+        if ordered_handles:
+            add_split_legend(fig, ordered_handles, ordered_labels,
+                             y_pos_top=0.052, y_pos_bottom=0.022)
+
+        plt.tight_layout(rect=[0.04, 0.12, 1, 0.98])
+        out_path = os.path.join(OUTPUT_DIR, f"causal_speedup_t{nt}.png")
+        plt.savefig(out_path, dpi=600, bbox_inches='tight', pad_inches=0.05)
+        plt.close()
+
+
+def plot_causal_load_imbalance(opt="O3", num_threads_list=(16,)):
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    for nt in num_threads_list:
+        schedules_data = {}
+        for sched in ('static', 'dynamic', 'work_stealing'):
+            path = os.path.join("outputs", f"fa2_causal_{opt}_mt_{sched}_t{nt}", "runtime.csv")
+            if not os.path.exists(path):
+                schedules_data[sched] = pd.DataFrame()
+                continue
+            df = pd.read_csv(path)
+            schedules_data[sched] = (df
+                .groupby(["T", "d", "M_bytes"])["load_imbalance"]
+                .mean()
+                .reset_index())
+
+        non_empty = [v for v in schedules_data.values() if not v.empty]
+        if not non_empty:
+            print(f"No causal MT data for num_threads={nt}, skipping load imbalance plot.")
+            continue
+
+        T_values = get_unique_values(non_empty, "T")
+        d_values = get_unique_values(non_empty, "d")
+        nrows, ncols = len(T_values), len(d_values)
+
+        fig, axes = plt.subplots(nrows, ncols, figsize=(6.5, nrows * 1.6), sharex=True, sharey=False)
+        axes = np.atleast_2d(axes)
+
+        legend_handles, legend_labels_list = [], []
+
+        for row, t_val in enumerate(T_values):
+            for col, d_val in enumerate(d_values):
+                ax     = axes[row, col]
+                y_data = []
+
+                for sched in ('static', 'dynamic', 'work_stealing'):
+                    agg = schedules_data[sched]
+                    if agg.empty:
+                        continue
+                    s = filter_data(agg, t_val, d_val).sort_values("M_bytes")
+                    if s.empty:
+                        continue
+                    style = CAUSAL_STYLES[sched]
+                    h, = ax.plot(s["M_bytes"] / 1024, s["load_imbalance"],
+                                 color=style['color'], linewidth=LINEWIDTH, label=style['label'])
+                    if row == 0 and col == 0:
+                        legend_handles.append(h)
+                        legend_labels_list.append(style['label'])
+                    y_data.extend(s["load_imbalance"].tolist())
+
+                setup_axis(ax, t_val, d_val)
+                set_y_ticks_load_imbalance(ax, y_data)
+                ax.tick_params(axis='y', labelsize=7)
+
+        fig.text(0.52, 0.11, "Cache Budget M (KiB)",             ha='center', va='center', fontsize=9)
+        fig.text(0.02, 0.5,  "Load Imbalance (max / mean time)", ha='center', va='center',
+                 rotation='vertical', fontsize=9)
+
+        if legend_handles:
+            fig.legend(legend_handles, legend_labels_list,
+                       bbox_to_anchor=(0.52, 0.03), ncol=len(legend_handles),
+                       fontsize=7, loc='lower center', columnspacing=0.6,
+                       handlelength=1.5, frameon=False)
+
+        plt.tight_layout(rect=[0.04, 0.12, 1, 0.98])
+        out_path = os.path.join(OUTPUT_DIR, f"causal_load_imbalance_t{nt}.png")
+        plt.savefig(out_path, dpi=600, bbox_inches='tight', pad_inches=0.05)
+        plt.close()
+
+
+def print_steal_overhead_table(opt="O3", num_threads_list=(16,),
+                               T_vals=(1024, 4096, 8192),
+                               M_kib_vals=(32, 256, 1024)):
+    for nt in num_threads_list:
+        path = os.path.join("outputs", f"fa2_causal_{opt}_mt_work_stealing_t{nt}",
+                            "runtime.csv")
+        if not os.path.exists(path):
+            print(f"Missing {path}, skipping steal overhead table.")
+            continue
+        df = pd.read_csv(path)
+
+        def fmt(sub):
+            if sub.empty:
+                return "     n/a     "
+            mean = sub["steal_overhead"].mean()
+            std  = sub["steal_overhead"].std(ddof=0)
+            return f"{mean:7.3f} ± {std:6.3f}"
+
+        lines = [f"\nSteal overhead (attempts / blocks), work_stealing, threads={nt}"]
+
+        lines.append("Avg steal overhead +- SD:")
+        lines.append(f"  {'M (KiB)':>8} | {'M_bytes':>8} | {'mean ± std':>16}")
+        lines.append(f"  {'-'*8}-+-{'-'*8}-+-{'-'*16}")
+        for kib in M_kib_vals:
+            m = kib * 1024
+            sub = df[df["M_bytes"] == m]
+            lines.append(f"  {kib:>8} | {m:>8} | {fmt(sub):>16}")
+
+        text = "\n".join(lines)
+        print(text)
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        with open(os.path.join(OUTPUT_DIR, f"causal_steal_overhead_t{nt}.txt"), "w") as f:
+            f.write(text + "\n")
+
+
 if __name__ == "__main__":
-    plot_performance(y_logscale=True, y_logscale_speedup=True)
+    plot_performance()
     plot_profile_breakdown()
+    plot_causal_speedup()
+    plot_causal_load_imbalance()
+    print_steal_overhead_table()

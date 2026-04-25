@@ -119,4 +119,53 @@ for opt in "${OPT_FLAGS[@]}"; do
   done
 done
 
+T_values_causal=(
+  1024
+  2048
+  4096
+  8192
+)
+
+num_threads_values=(
+  16
+)
+
+schedules=(static dynamic work_stealing)
+
+for t in "${T_values_causal[@]}"; do
+  for d in "${d_values[@]}"; do
+    echo "Running Python causal attention: T=$t, d=$d"
+    python tools/bench_naive_causal.py --T "$t" --d "$d" --num_testsets "$num_testsets"
+  done
+done
+
+for opt in "${OPT_FLAGS[@]}"; do
+  for t in "${T_values_causal[@]}"; do
+    for d in "${d_values[@]}"; do
+      echo "Running C++ bench_naive_causal_${opt}: T=$t, d=$d"
+      ./build/bin/bench_naive_causal_${opt} --T "$t" --d "$d" --num_testsets "$num_testsets" --opt_flag "$opt"
+    done
+  done
+done
+
+for opt in "${OPT_FLAGS[@]}"; do
+  for sched in "${schedules[@]}"; do
+    for nt in "${num_threads_values[@]}"; do
+      for t in "${T_values_causal[@]}"; do
+        for d in "${d_values[@]}"; do
+          for m in "${M_bytes_values[@]}"; do
+            echo "Running C++ bench_fa2_causal_mt_${opt} (${sched}, threads=${nt}): T=$t, d=$d, M=$(($m/1024))KiB"
+            ./build/bin/bench_fa2_causal_mt_${opt} \
+              --T "$t" --d "$d" --M_bytes "$m" \
+              --num_testsets "$num_testsets" \
+              --opt_flag "$opt" \
+              --schedule "$sched" \
+              --num_threads "$nt"
+          done
+        done
+      done
+    done
+  done
+done
+
 python plot.py
