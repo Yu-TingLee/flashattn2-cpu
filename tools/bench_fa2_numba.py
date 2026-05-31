@@ -5,7 +5,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 import time
 import argparse
-from flash_attn.attn_numba import fa2_forward
 from flash_attn.io import read_QKV
 
 
@@ -15,9 +14,18 @@ if __name__ == "__main__":
     parser.add_argument("--d", type=int, default=64)
     parser.add_argument("--M_bytes", type=int, default=131072)
     parser.add_argument("--num_testsets", type=int, default=100)
+    parser.add_argument("--num_threads", type=int,
+                        default=int(os.environ.get("NUMBA_NUM_THREADS",
+                                                   os.cpu_count())))
     args = parser.parse_args()
 
-    output_dir = os.path.join("outputs", "fa2_jit")
+    os.environ["OPENBLAS_NUM_THREADS"] = "1"
+    os.environ["NUMBA_NUM_THREADS"] = str(args.num_threads)
+    import numba
+    numba.set_num_threads(args.num_threads)
+    from flash_attn.attn_numba import fa2_forward
+
+    output_dir = os.path.join("outputs", f"fa2_numba_t{args.num_threads}")
     os.makedirs(output_dir, exist_ok=True)
     log_path = os.path.join(output_dir, "runtime.csv")
 
@@ -34,7 +42,6 @@ if __name__ == "__main__":
                 completed_runs.add((int(parts[0]), int(parts[1]),
                                     int(parts[2]), int(parts[3])))
 
-    os.environ["OPENBLAS_NUM_THREADS"] = "1"
     scale = np.float32(1.0 / np.sqrt(np.float32(args.d)))
 
     # Warm-up: trigger Numba JIT compilation before timed runs

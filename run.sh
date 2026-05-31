@@ -45,11 +45,18 @@ for t in "${T_values[@]}"; do
   done
 done
 
-for t in "${T_values[@]}"; do
-  for d in "${d_values[@]}"; do
-    for m in "${M_bytes_values[@]}"; do
-      echo "Running FA-2 (Numba): T=$t, d=$d, M=$(($m/1024))KiB"
-      python tools/bench_fa2_numba.py --T "$t" --d "$d" --M_bytes "$m" --num_testsets "$num_testsets"
+num_threads_values=(
+  8
+  16
+)
+
+for nt in "${num_threads_values[@]}"; do
+  for t in "${T_values[@]}"; do
+    for d in "${d_values[@]}"; do
+      for m in "${M_bytes_values[@]}"; do
+        echo "Running FA-2 (Numba, threads=${nt}): T=$t, d=$d, M=$(($m/1024))KiB"
+        python tools/bench_fa2_numba.py --T "$t" --d "$d" --M_bytes "$m" --num_testsets "$num_testsets" --num_threads "$nt"
+      done
     done
   done
 done
@@ -77,11 +84,13 @@ for opt in "${OPT_FLAGS[@]}"; do
 done
 
 for opt in "${OPT_FLAGS[@]}"; do
-  for t in "${T_values[@]}"; do
-    for d in "${d_values[@]}"; do
-      for m in "${M_bytes_values[@]}"; do
-        echo "Running C++ bench_fa2_${opt}_mt: T=$t, d=$d, M=$(($m/1024))KiB"
-        ./build/bin/bench_fa2_${opt}_mt --T "$t" --d "$d" --M_bytes "$m" --num_testsets "$num_testsets" --opt_flag "$opt"
+  for nt in "${num_threads_values[@]}"; do
+    for t in "${T_values[@]}"; do
+      for d in "${d_values[@]}"; do
+        for m in "${M_bytes_values[@]}"; do
+          echo "Running C++ bench_fa2_${opt}_mt (threads=${nt}): T=$t, d=$d, M=$(($m/1024))KiB"
+          ./build/bin/bench_fa2_${opt}_mt --T "$t" --d "$d" --M_bytes "$m" --num_testsets "$num_testsets" --opt_flag "$opt" --num_threads "$nt"
+        done
       done
     done
   done
@@ -120,17 +129,21 @@ for opt in "${OPT_FLAGS[@]}"; do
 done
 
 T_values_causal=(
+  256
+  512
   1024
   2048
   4096
   8192
 )
 
-num_threads_values=(
-  16
+schedules=(
+  static 
+  dynamic 
+  work_stealing
 )
 
-schedules=(static dynamic work_stealing)
+OPT_FLAGS=(O3)
 
 for t in "${T_values_causal[@]}"; do
   for d in "${d_values[@]}"; do
@@ -144,6 +157,20 @@ for opt in "${OPT_FLAGS[@]}"; do
     for d in "${d_values[@]}"; do
       echo "Running C++ bench_naive_causal_${opt}: T=$t, d=$d"
       ./build/bin/bench_naive_causal_${opt} --T "$t" --d "$d" --num_testsets "$num_testsets" --opt_flag "$opt"
+    done
+  done
+done
+
+for opt in "${OPT_FLAGS[@]}"; do
+  for t in "${T_values_causal[@]}"; do
+    for d in "${d_values[@]}"; do
+      for m in "${M_bytes_values[@]}"; do
+        echo "Running C++ bench_fa2_causal_${opt} (ST): T=$t, d=$d, M=$(($m/1024))KiB"
+        ./build/bin/bench_fa2_causal_${opt} \
+          --T "$t" --d "$d" --M_bytes "$m" \
+          --num_testsets "$num_testsets" \
+          --opt_flag "$opt"
+      done
     done
   done
 done

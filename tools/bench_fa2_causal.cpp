@@ -9,7 +9,6 @@
 #include <chrono>
 #include <iomanip>
 #include <filesystem>
-#include <omp.h>
 #include "flash_attn/attn.hpp"
 #include "flash_attn/io.hpp"
 #include "flash_attn/args.hpp"
@@ -21,21 +20,10 @@ int main(int argc, char** argv) {
     const int M_bytes      = arg_int(argc, argv, "--M_bytes", 131072);
     const int num_testsets = arg_int(argc, argv, "--num_testsets", 100);
     const std::string opt  = arg_str(argc, argv, "--opt_flag", "O3");
-    const int num_threads  = arg_int(argc, argv, "--num_threads", omp_get_max_threads());
 
-    omp_set_num_threads(num_threads);
-
-    const std::string out_dir  = "outputs/fa2_cpp_" + opt + "_mt_t" + std::to_string(num_threads);
+    const std::string out_dir  = "outputs/fa2_causal_" + opt;
     const std::string log_path = out_dir + "/runtime.csv";
     std::filesystem::create_directories(out_dir);
-
-    #pragma omp parallel
-    {
-        #pragma omp single
-        std::cout << "Running fa2_cpp_" << opt << "_mt: T=" << T << ", d=" << d
-                  << ", M=" << M_bytes / 1024 << " KiB — "
-                  << omp_get_num_threads() << " OpenMP threads\n";
-    }
 
     std::set<std::tuple<int,int,int,int>> done;
     if (std::filesystem::exists(log_path)) {
@@ -72,7 +60,7 @@ int main(int argc, char** argv) {
         auto V  = load_matrix(data_dir + "/V.txt",  T, d);
 
         const auto t1 = std::chrono::steady_clock::now();
-        auto O = fa2_forward(Q, Kt, V, T, d, M_bytes, scale);
+        auto O = fa2_forward_causal(Q, Kt, V, T, d, M_bytes, scale);
         const double runtime =
             std::chrono::duration<double>(std::chrono::steady_clock::now() - t1).count();
 
@@ -80,7 +68,7 @@ int main(int argc, char** argv) {
                   << runtime << " s\n";
 
         const std::string ref =
-            data_dir + "/O_T" + std::to_string(T) + "_d" + std::to_string(d) + ".npy";
+            data_dir + "/O_causal_T" + std::to_string(T) + "_d" + std::to_string(d) + ".npy";
         const bool ok = verify_output(O, load_npy(ref, T, d));
 
         std::ofstream f(log_path, std::ios::app);

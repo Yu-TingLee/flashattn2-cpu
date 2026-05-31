@@ -1,47 +1,22 @@
-Peformance Evaluation of FlashAttention-2 on CPU
+Peformance Evaluation of FlashAttention-2 for Inference on CPU
 =======================
-This repository contains implementations of the FlashAttention-2 forward pass on CPU. Both the C++ and Python implementations include single- and multi-threaded versions. Standard attention baselines are also provided. For causal attention, we benchmark three scheduling strategies: static, centralized dynamic, and work-stealing.
+This repository contains implementations of the FlashAttention-2 forward kernel run on CPU. Standard attention baselines are also provided. For causal attention, three scheduling strategies are implemented: static, centralized dynamic, and work-stealing.
 
 The technical report, including algorithm derivation, complexity analysis, and interpretation, is available here:
-* [Performance Evaluation of FlashAttention-2 on CPU (PDF)](./flashattn2-cpu-report.pdf)
-* [Google Drive Backup](https://drive.google.com/file/d/1Ui7b7OmlLXq72F-xsxJRqMYaqPPlKO0-/view?usp=drive_link)
+* [Performance Evaluation of FlashAttention-2 for Inference on CPU (PDF)](./flashattn2-cpu-report.pdf)
 
-Experimental Results
+Short Abstract
 ------------
-**TL;DR:** We evaluate the performance of FlashAttenion-2 forward kernel on CPU.
+**TL;DR:** We evaluate the performance of FlashAttenion-2 forward kernel for inference on CPU.
 
-FlashAttention-2 uses tiled attention and kernel fusion to reduce I/O and accelerate computation. 
-However, because this algorithm is explicitly designed for GPUs, its behavior on CPUs remains largely underexplored. This gap is significant as CPU inference remains critical for resource-constrained environments.
+FlashAttention has revolutionized transformer training and inference on GPU by minimizing memory I/O, yet its behavior on CPU remains underexplored. We benchmark several implementations of the forward kernel against standard attention baselines and, for masked attention, compare three threading strategies for parallelizing the kernel. We also profile the runtime breakdown of the kernel's algorithmic steps. Results show that FA-2 can outperform standard attention in every tested configuration, yielding up to 7.9x speedup for self-attention and 12.8x for masked attention. We also find three intriguing results: larger block sizes can degrade performance despite lower I/O complexity, the optimal block size is typically small-to-moderate, and online softmax dominates runtime despite its lower complexity than matrix multiplications.
 
 <br>
 <p align="center">
   <img src="./images/fa2_figure.png" width="100%">
   <br>
-  <em>Figure 1: Computation of the FlashAttention-2 forward pass.</em>
+  <em>Figure 1: Computation of the FlashAttention-2 forward kernel.</em>
 </p>
-
-<details>
-<summary><b>Speedup compared to standard attention.</b></summary><br>
-
-<br>
-<p align="center">
-  <img src="./images/speedup.png" width="100%">
-  <br>
-  <em>Figure 2: Multi-threaded C++ FA-2 achieves up to a <strong>7.9x speedup</strong> on long sequences.
-Standard C++ attention remains faster for short sequences.</em>
-</p>
-</details>
-
-<details>
-<summary><b>Runtime distribution profiling.</b></summary><br>
-
-<br>
-<p align="center">
-  <img src="./images/profile.png" width="100%">
-  <br>
-  <em>Figure 3: Profiling shows the online softmax consumes a significant portion of runtime, although having a smaller order of computational complexity.</em>
-</p>
-</details>
 
 Dependencies
 ------------
