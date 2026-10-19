@@ -64,7 +64,7 @@ void process_query_block(int i, const Tiling& t, int T,
 
         Eigen::VectorXf m_new = m.cwiseMax(S.rowwise().maxCoeff());
         Eigen::VectorXf alpha = (m - m_new).array().exp();
-        Eigen::MatrixXf P     = (S.colwise() - m_new).array().exp().matrix();
+        MatrixXfRM P          = (S.colwise() - m_new).array().exp().matrix();
         Eigen::VectorXf l_new = alpha.cwiseProduct(l) + P.rowwise().sum();
 
         auto O_block = O.middleRows(row_start, cur_I);

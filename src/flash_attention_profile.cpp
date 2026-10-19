@@ -45,7 +45,7 @@ ProfileResult fa2_forward_profile(const MatrixXfRM& Q, const MatrixXfRM& Kt,
             tt = Clock::now();
             Eigen::VectorXf m_new = m.cwiseMax(S.rowwise().maxCoeff());
             Eigen::VectorXf alpha = (m - m_new).array().exp();
-            Eigen::MatrixXf P     = (S.colwise() - m_new).array().exp().matrix();
+            MatrixXfRM P          = (S.colwise() - m_new).array().exp().matrix();
             Eigen::VectorXf l_new = alpha.cwiseProduct(l) + P.rowwise().sum();
             p.online_softmax += since(tt);
 
