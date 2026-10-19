@@ -24,7 +24,7 @@ Repository Layout
 include/flash_attn/   C++ API: naive attention, FA-2 kernels, matrix I/O
 src/                  C++ kernels (serial, OpenMP, causal schedulers, profiling)
 flash_attn/           NumPy and Numba implementations
-benchmarks/           Benchmark drivers for each implementation
+benchmarks/           Benchmark drivers for each implementation and PyTorch SDPA
 data_generation.py    Random Q, K, V test sets
 plot.py               Figures and summaries from the benchmark logs
 run.sh                Full benchmark sweep
@@ -32,7 +32,7 @@ run.sh                Full benchmark sweep
 
 Dependencies
 ------------
-- **Python:** numpy, scipy, numba, pandas, matplotlib
+- **Python:** numpy, scipy, numba, pandas, matplotlib, PyTorch (tested with 2.6.0, for the SDPA baseline)
 - **C++:** OpenMP, CMake ≥ 3.16, GCC ≥ 10 (or another C++17 compiler). CMake downloads Eigen 5.0.1 (header-only) at configure time
 
 Usage

@@ -7,6 +7,7 @@ NUM_TESTSETS=50
 T_VALUES=(256 512 1024 2048 4096 8192)
 D_VALUES=(64 128)
 NUM_THREADS=(8 16)
+SDPA_THREADS=(1 8 16)
 SCHEDULES=(static dynamic work_stealing)
 
 # Cache budgets M from 32 KiB to 1 MiB.
@@ -28,44 +29,35 @@ for_each_t_d() {
   done
 }
 
+# The NumPy runs also write the reference outputs.
 run_naive() {
   echo "Naive attention: T=$T, d=$d"
   python -m benchmarks.bench_naive --T "$T" --d "$d" --num_testsets "$NUM_TESTSETS"
   "$BIN/bench_naive" --T "$T" --d "$d" --num_testsets "$NUM_TESTSETS"
+  echo "Masked naive attention: T=$T, d=$d"
+  python -m benchmarks.bench_naive_causal --T "$T" --d "$d" --num_testsets "$NUM_TESTSETS"
+  "$BIN/bench_naive_causal" --T "$T" --d "$d" --num_testsets "$NUM_TESTSETS"
+}
+
+run_sdpa() {
+  for nt in "${SDPA_THREADS[@]}"; do
+    echo "PyTorch SDPA: T=$T, d=$d, threads=$nt"
+    python -m benchmarks.bench_sdpa --T "$T" --d "$d" --num_testsets "$NUM_TESTSETS" \
+      --num_threads "$nt"
+    python -m benchmarks.bench_sdpa --T "$T" --d "$d" --num_testsets "$NUM_TESTSETS" \
+      --num_threads "$nt" --causal
+  done
 }
 
 run_fa2() {
   for M in "${M_VALUES[@]}"; do
     echo "FA-2: T=$T, d=$d, M=$((M / 1024))KiB"
-    python -m benchmarks.bench_fa2 --T "$T" --d "$d" --M_bytes "$M" --num_testsets "$NUM_TESTSETS"
     "$BIN/bench_fa2" --T "$T" --d "$d" --M_bytes "$M" --num_testsets "$NUM_TESTSETS"
     for nt in "${NUM_THREADS[@]}"; do
-      python -m benchmarks.bench_fa2_numba --T "$T" --d "$d" --M_bytes "$M" \
-        --num_testsets "$NUM_TESTSETS" --num_threads "$nt"
       "$BIN/bench_fa2_mt" --T "$T" --d "$d" --M_bytes "$M" \
         --num_testsets "$NUM_TESTSETS" --num_threads "$nt"
     done
   done
-}
-
-run_profile() {
-  for T in "${PROFILE_T_VALUES[@]}"; do
-    for d in "${D_VALUES[@]}"; do
-      for M in "${PROFILE_M_VALUES[@]}"; do
-        echo "FA-2 profile: T=$T, d=$d, M=$((M / 1024))KiB"
-        python -m benchmarks.bench_fa2_profile --T "$T" --d "$d" --M_bytes "$M" \
-          --num_testsets "$NUM_TESTSETS"
-        "$BIN/bench_fa2_profile" --T "$T" --d "$d" --M_bytes "$M" \
-          --num_testsets "$NUM_TESTSETS"
-      done
-    done
-  done
-}
-
-run_naive_causal() {
-  echo "Masked naive attention: T=$T, d=$d"
-  python -m benchmarks.bench_naive_causal --T "$T" --d "$d" --num_testsets "$NUM_TESTSETS"
-  "$BIN/bench_naive_causal" --T "$T" --d "$d" --num_testsets "$NUM_TESTSETS"
 }
 
 run_fa2_causal() {
@@ -81,12 +73,43 @@ run_fa2_causal() {
   done
 }
 
+run_profile() {
+  for T in "${PROFILE_T_VALUES[@]}"; do
+    for d in "${D_VALUES[@]}"; do
+      for M in "${PROFILE_M_VALUES[@]}"; do
+        echo "FA-2 profile: T=$T, d=$d, M=$((M / 1024))KiB"
+        "$BIN/bench_fa2_profile" --T "$T" --d "$d" --M_bytes "$M" \
+          --num_testsets "$NUM_TESTSETS"
+      done
+    done
+  done
+}
+
+run_fa2_python() {
+  for M in "${M_VALUES[@]}"; do
+    echo "FA-2 (NumPy): T=$T, d=$d, M=$((M / 1024))KiB"
+    python -m benchmarks.bench_fa2 --T "$T" --d "$d" --M_bytes "$M" --num_testsets "$NUM_TESTSETS"
+  done
+}
+
+run_fa2_numba() {
+  for M in "${M_VALUES[@]}"; do
+    for nt in "${NUM_THREADS[@]}"; do
+      echo "FA-2 (Numba): T=$T, d=$d, M=$((M / 1024))KiB, threads=$nt"
+      python -m benchmarks.bench_fa2_numba --T "$T" --d "$d" --M_bytes "$M" \
+        --num_testsets "$NUM_TESTSETS" --num_threads "$nt"
+    done
+  done
+}
+
 python data_generation.py --T 8192 --d 128 --num_testsets "$NUM_TESTSETS"
 
 for_each_t_d run_naive
+for_each_t_d run_sdpa
 for_each_t_d run_fa2
-run_profile
-for_each_t_d run_naive_causal
 for_each_t_d run_fa2_causal
+run_profile
+for_each_t_d run_fa2_python
+for_each_t_d run_fa2_numba
 
-python plot.py
+python plot.py --sdpa

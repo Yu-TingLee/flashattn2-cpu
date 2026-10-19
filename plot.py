@@ -1,3 +1,4 @@
+import argparse
 import os
 import numpy as np
 import pandas as pd
@@ -31,6 +32,54 @@ def runtime_csv(name):
 
 def causal_mt_name(sched, nt):
     return f"fa2_causal_cpp_mt_{sched}_t{nt}"
+
+
+SDPA_THREADS    = (1, 8, 16)
+SDPA_LINESTYLES = {1: ':', 8: '--', 16: (0, (3, 1, 1, 1))}
+SDPA_MATCH_TOL  = 0.05
+
+
+def sdpa_name(nt, causal=False):
+    return f"sdpa_causal_t{nt}" if causal else f"sdpa_t{nt}"
+
+
+def _sdpa_speedups(df_ref, causal=False):
+    """Per-(T, d) mean and std speedup of SDPA over df_ref, keyed by thread count."""
+    out = {}
+    for nt in SDPA_THREADS:
+        path = runtime_csv(sdpa_name(nt, causal))
+        if not os.path.exists(path):
+            continue
+        merged = pd.merge(pd.read_csv(path), df_ref, on=["testset", "T", "d"],
+                          suffixes=("", "_ref"))
+        merged["speedup"] = merged["runtime_ref"] / merged["runtime"]
+        grouped = merged.groupby(["T", "d"])["speedup"]
+        out[nt] = pd.DataFrame({"mean": grouped.mean(),
+                                "std":  grouped.std(ddof=0)}).reset_index()
+    return out
+
+
+def _draw_sdpa(ax, sdpa_aggs, t_val, d_val, handles, y_data, band=False):
+    for nt, agg in sdpa_aggs.items():
+        s = filter_data(agg, t_val, d_val)
+        if s.empty:
+            continue
+        mean, std = s["mean"].iloc[0], s["std"].iloc[0]
+        line = ax.axhline(y=mean, color=PAPER_COLORS['sdpa'],
+                          linestyle=SDPA_LINESTYLES[nt], linewidth=LINEWIDTH,
+                          label=(PAPER_LABELS['sdpa_st'] if nt == 1 else
+                                 PAPER_LABELS['sdpa'].format(nt=nt)))
+        handles.setdefault(nt, line)
+        y_data.append(mean)
+        if band:
+            ax.axhspan(max(mean - std, 1e-3), mean + std,
+                       color=PAPER_COLORS['sdpa'], alpha=0.10, linewidth=0)
+            y_data.extend([mean - std, mean + std])
+
+
+def _sdpa_legend_row(handles):
+    row_h = [handles[nt] for nt in sorted(handles, reverse=True)]
+    return row_h, [h.get_label() for h in row_h]
 
 
 def get_smart_ticks(y_data, candidates, pad_top_if_close=False, top_close_ratio=0.9, max_ticks=6):
@@ -165,6 +214,7 @@ PAPER_COLORS = {
     ('dynamic', 16):       PAPER_PALETTE[4],
     ('work_stealing', 8):  PAPER_PALETTE[5],
     ('work_stealing', 16): PAPER_PALETTE[6],
+    'sdpa':                '#000000',
 }
 
 OUTPUT_DIR = os.path.join("outputs", "plots")
@@ -178,6 +228,8 @@ PAPER_LABELS = {
     'static':           'Masked FA-2 (static, {nt} threads)',
     'dynamic':          'Masked FA-2 (dynamic, {nt} threads)',
     'work_stealing':    'Masked FA-2 (work-stealing, {nt} threads)',
+    'sdpa_st':          'PyTorch SDPA (ST)',
+    'sdpa':             'PyTorch SDPA ({nt} threads)',
 }
 
 
@@ -187,7 +239,7 @@ def _color(key, nt=None):
     return PAPER_COLORS.get(key)
 
 
-def plot_speedup(num_threads_list=(8, 16), y_logscale=True):
+def plot_speedup(num_threads_list=(8, 16), y_logscale=True, sdpa=False):
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     per_thread = []
@@ -204,6 +256,9 @@ def plot_speedup(num_threads_list=(8, 16), y_logscale=True):
         print("No runtime data available; skipping paper speedup plot.")
         return
 
+    sdpa_aggs = (_sdpa_speedups(pd.read_csv(runtime_csv("naive_attn_cpp")))
+                 if sdpa else {})
+
     aggs = []
     for td in per_thread:
         aggs.extend([td['agg_fa2_cpp'], td['agg_fa2_cpp_mt']])
@@ -218,6 +273,7 @@ def plot_speedup(num_threads_list=(8, 16), y_logscale=True):
     h_naive = None
     h_st    = None
     mt_handles = {}
+    sdpa_handles = {}
 
     for row, t_val in enumerate(T_values):
         for col, d_val in enumerate(d_values):
@@ -257,6 +313,7 @@ def plot_speedup(num_threads_list=(8, 16), y_logscale=True):
                 mt_handles.setdefault(nt, line)
                 y_data.extend(y)
 
+            _draw_sdpa(ax, sdpa_aggs, t_val, d_val, sdpa_handles, y_data)
             setup_axis(ax, t_val, d_val, y_logscale)
             set_y_ticks(ax, y_data, is_speedup=True)
 
@@ -272,6 +329,8 @@ def plot_speedup(num_threads_list=(8, 16), y_logscale=True):
         row_h.append(h_naive); row_l.append(h_naive.get_label())
 
     rows = [(row_h, row_l)]
+    if sdpa_handles:
+        rows.append(_sdpa_legend_row(sdpa_handles))
     top_y, step, bottom_pad = _legend_layout(causal=False)
     fig.text(0.52, bottom_pad - 0.01, "Cache Budget M (KiB)",
              ha='center', va='center', fontsize=9)
@@ -471,7 +530,7 @@ def _load_causal_schedules(nt, df_naive):
             for sched in SCHEDULES}
 
 
-def plot_causal_speedup(num_threads_list=(8, 16), y_logscale=True):
+def plot_causal_speedup(num_threads_list=(8, 16), y_logscale=True, sdpa=False):
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     naive_path = runtime_csv("naive_causal_cpp")
@@ -481,6 +540,7 @@ def plot_causal_speedup(num_threads_list=(8, 16), y_logscale=True):
     df_naive = pd.read_csv(naive_path)
 
     agg_st = _mean_causal_speedup("fa2_causal_cpp", df_naive)
+    sdpa_aggs = _sdpa_speedups(df_naive, causal=True) if sdpa else {}
 
     per_thread = []
     for nt in num_threads_list:
@@ -506,6 +566,7 @@ def plot_causal_speedup(num_threads_list=(8, 16), y_logscale=True):
     h_baseline = None
     h_st       = None
     sched_handles = {}
+    sdpa_handles = {}
 
     for row, t_val in enumerate(T_values):
         for col, d_val in enumerate(d_values):
@@ -544,6 +605,7 @@ def plot_causal_speedup(num_threads_list=(8, 16), y_logscale=True):
                     sched_handles.setdefault((sched, nt), line)
                     y_data.extend(s["speedup"].tolist())
 
+            _draw_sdpa(ax, sdpa_aggs, t_val, d_val, sdpa_handles, y_data)
             setup_axis(ax, t_val, d_val, y_logscale)
             set_y_ticks(ax, y_data, is_speedup=True)
 
@@ -558,6 +620,8 @@ def plot_causal_speedup(num_threads_list=(8, 16), y_logscale=True):
     base_h = [h for h in (h_st, h_baseline) if h is not None]
     if base_h:
         rows.append((base_h, [h.get_label() for h in base_h]))
+    if sdpa_handles:
+        rows.append(_sdpa_legend_row(sdpa_handles))
 
     top_y, step, bottom_pad = _legend_layout(causal=True)
     step *= 0.75
@@ -669,12 +733,13 @@ def _plot_band(ax, x, mean, std, color, label, y_floor=1e-3, y_logscale=True):
     return line
 
 
-def plot_speedup_std(num_threads_list=(8, 16), y_logscale=True):
+def plot_speedup_std(num_threads_list=(8, 16), y_logscale=True, sdpa=False):
     """Same layout as plot_speedup, with mean ± std as shaded bands."""
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     df_naive = pd.read_csv(runtime_csv("naive_attn_cpp"))
     st_agg = _speedup_mean_std("fa2_cpp", df_naive)
+    sdpa_aggs = _sdpa_speedups(df_naive) if sdpa else {}
 
     per_thread = []
     for nt in num_threads_list:
@@ -697,6 +762,7 @@ def plot_speedup_std(num_threads_list=(8, 16), y_logscale=True):
 
     h_naive = h_st = None
     mt_handles = {}
+    sdpa_handles = {}
 
     for row, t_val in enumerate(T_values):
         for col, d_val in enumerate(d_values):
@@ -735,6 +801,8 @@ def plot_speedup_std(num_threads_list=(8, 16), y_logscale=True):
                 y_data.extend((s["mean"] + s["std"]).tolist())
                 y_data.extend((s["mean"] - s["std"]).tolist())
 
+            _draw_sdpa(ax, sdpa_aggs, t_val, d_val, sdpa_handles, y_data,
+                       band=True)
             setup_axis(ax, t_val, d_val, y_logscale)
             set_y_ticks(ax, y_data, is_speedup=True)
 
@@ -748,6 +816,8 @@ def plot_speedup_std(num_threads_list=(8, 16), y_logscale=True):
         row_h.append(h_naive); row_l.append(h_naive.get_label())
 
     rows = [(row_h, row_l)]
+    if sdpa_handles:
+        rows.append(_sdpa_legend_row(sdpa_handles))
     top_y, step, bottom_pad = _legend_layout(causal=False)
     fig.text(0.52, bottom_pad - 0.01, "Cache Budget M (KiB)",
              ha='center', va='center', fontsize=9)
@@ -760,7 +830,7 @@ def plot_speedup_std(num_threads_list=(8, 16), y_logscale=True):
     plt.close()
 
 
-def plot_causal_speedup_std(num_threads_list=(8, 16), y_logscale=True):
+def plot_causal_speedup_std(num_threads_list=(8, 16), y_logscale=True, sdpa=False):
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     naive_path = runtime_csv("naive_causal_cpp")
@@ -770,6 +840,7 @@ def plot_causal_speedup_std(num_threads_list=(8, 16), y_logscale=True):
     df_naive = pd.read_csv(naive_path)
 
     st_agg = _speedup_mean_std("fa2_causal_cpp", df_naive)
+    sdpa_aggs = _sdpa_speedups(df_naive, causal=True) if sdpa else {}
 
     per_thread = []
     for nt in num_threads_list:
@@ -795,6 +866,7 @@ def plot_causal_speedup_std(num_threads_list=(8, 16), y_logscale=True):
 
     h_baseline = h_st = None
     sched_handles = {}
+    sdpa_handles = {}
 
     for row, t_val in enumerate(T_values):
         for col, d_val in enumerate(d_values):
@@ -837,6 +909,8 @@ def plot_causal_speedup_std(num_threads_list=(8, 16), y_logscale=True):
                     y_data.extend((s["mean"] + s["std"]).tolist())
                     y_data.extend((s["mean"] - s["std"]).tolist())
 
+            _draw_sdpa(ax, sdpa_aggs, t_val, d_val, sdpa_handles, y_data,
+                       band=True)
             setup_axis(ax, t_val, d_val, y_logscale)
             set_y_ticks(ax, y_data, is_speedup=True)
 
@@ -850,6 +924,8 @@ def plot_causal_speedup_std(num_threads_list=(8, 16), y_logscale=True):
     base_h = [h for h in (h_st, h_baseline) if h is not None]
     if base_h:
         rows.append((base_h, [h.get_label() for h in base_h]))
+    if sdpa_handles:
+        rows.append(_sdpa_legend_row(sdpa_handles))
 
     top_y, step, bottom_pad = _legend_layout(causal=True)
     step *= 0.75
@@ -994,12 +1070,82 @@ def plot_load_imbalance_heatmap(num_threads_list=(8, 16),
     plt.close()
 
 
+def _best_fa2_runtimes(names):
+    """Per-(T, d) lowest mean runtime over M and variants, with the M and variant."""
+    frames = []
+    for name in names:
+        path = runtime_csv(name)
+        if not os.path.exists(path):
+            continue
+        agg = pd.read_csv(path).groupby(["T", "d", "M_bytes"])["runtime"].mean().reset_index()
+        agg["variant"] = name
+        frames.append(agg)
+    if not frames:
+        return pd.DataFrame()
+    df = pd.concat(frames, ignore_index=True)
+    return df.loc[df.groupby(["T", "d"])["runtime"].idxmin()].reset_index(drop=True)
+
+
+def _sdpa_verdict(sdpa_runtime, fa2_runtime):
+    ratio = sdpa_runtime / fa2_runtime
+    if abs(ratio - 1) <= SDPA_MATCH_TOL:
+        return "matches"
+    if ratio > 1:
+        return f"beats by {(ratio - 1) * 100:.0f}%"
+    return f"loses by {(1 / ratio - 1) * 100:.0f}%"
+
+
+def write_sdpa_summary():
+    """Best FA-2 configuration vs PyTorch SDPA at the same thread count, per (T, d)."""
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    sections = []
+    for causal in (False, True):
+        for nt in SDPA_THREADS:
+            path = runtime_csv(sdpa_name(nt, causal))
+            if not os.path.exists(path):
+                continue
+            if causal:
+                names = (["fa2_causal_cpp"] if nt == 1 else
+                         [causal_mt_name(s, nt) for s in SCHEDULES])
+            else:
+                names = ["fa2_cpp"] if nt == 1 else [f"fa2_cpp_mt_t{nt}"]
+            best = _best_fa2_runtimes(names)
+            if best.empty:
+                continue
+            sdpa = pd.read_csv(path).groupby(["T", "d"])["runtime"].mean().reset_index()
+            merged = pd.merge(best, sdpa, on=["T", "d"], suffixes=("_fa2", "_sdpa"))
+
+            kind = "Masked" if causal else "Self"
+            lines = [f"========== {kind}-attention, {nt} threads: "
+                     f"best FA-2 vs PyTorch SDPA =========="]
+            for _, r in merged.sort_values(["d", "T"]).iterrows():
+                lines.append(
+                    f"  T={int(r['T'])}, d={int(r['d'])}: "
+                    f"SDPA {r['runtime_sdpa'] * 1e3:.3f} ms, "
+                    f"FA-2 {r['runtime_fa2'] * 1e3:.3f} ms "
+                    f"({r['variant']}, M={int(r['M_bytes'] / 1024)}KB) -> "
+                    f"{_sdpa_verdict(r['runtime_sdpa'], r['runtime_fa2'])}")
+            sections.append("\n".join(lines))
+
+    if not sections:
+        print("No SDPA data available; skipping sdpa_summary.txt.")
+        return
+    with open(os.path.join(OUTPUT_DIR, "sdpa_summary.txt"), "w") as f:
+        f.write("\n\n".join(sections) + "\n")
+
+
 if __name__ == "__main__":
-    plot_speedup()
-    plot_speedup_std()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--sdpa", action="store_true",
+                        help="draw the PyTorch SDPA baseline on the speedup figures")
+    args = parser.parse_args()
+
+    plot_speedup(sdpa=args.sdpa)
+    plot_speedup_std(sdpa=args.sdpa)
     plot_profile()
-    plot_causal_speedup()
-    plot_causal_speedup_std()
+    plot_causal_speedup(sdpa=args.sdpa)
+    plot_causal_speedup_std(sdpa=args.sdpa)
     plot_steal_success_heatmap()
     plot_load_imbalance_heatmap()
     write_causal_summary()
+    write_sdpa_summary()
