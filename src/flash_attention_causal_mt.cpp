@@ -67,6 +67,9 @@ void run_work_stealing(const MatrixXfRM& Q, const MatrixXfRM& Kt, const MatrixXf
     std::vector<std::thread> threads(num_threads);
     for (int tid = 0; tid < num_threads; ++tid) {
         threads[tid] = std::thread([&, tid]() {
+            // Outside an OpenMP region Eigen would start its own team for every
+            // product, oversubscribing the cores num_threads times over.
+            omp_set_num_threads(1);
             ThreadMetrics& tm = metrics[tid];
             const auto t0 = Clock::now();
 
