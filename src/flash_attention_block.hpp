@@ -35,7 +35,10 @@ void process_query_block(int i, const Tiling& t, int T,
 
     Eigen::VectorXf l = Eigen::VectorXf::Zero(cur_I);
     Eigen::VectorXf m = Eigen::VectorXf::Constant(cur_I, -INFINITY);
-    MatrixXfRM Q_i = Q.middleRows(row_start, cur_I);
+    Eigen::VectorXf m_new(cur_I), alpha(cur_I);
+    MatrixXfRM S(cur_I, t.J), P(cur_I, t.J);
+    const auto Q_i = Q.middleRows(row_start, cur_I);
+    auto O_i       = O.middleRows(row_start, cur_I);
 
     // Under a causal mask, key blocks that start past the last query row are skipped.
     const int j_end = Causal ? std::min(t.Tc, ((i + 1) * t.I + t.J - 1) / t.J) : t.Tc;
@@ -44,10 +47,13 @@ void process_query_block(int i, const Tiling& t, int T,
         const int col_start = j * t.J;
         const int cur_J     = std::min(col_start + t.J, T) - col_start;
 
-        MatrixXfRM Kt_j = Kt.middleCols(col_start, cur_J);
-        MatrixXfRM V_j  = V.middleRows(col_start, cur_J);
+        // Views, not copies: Eigen packs the operands inside the product anyway.
+        const auto Kt_j = Kt.middleCols(col_start, cur_J);
+        const auto V_j  = V.middleRows(col_start, cur_J);
 
-        MatrixXfRM S = Q_i * Kt_j;
+        S.resize(cur_I, cur_J);
+        P.resize(cur_I, cur_J);
+        S.noalias() = Q_i * Kt_j;
         S *= scale;
 
         if constexpr (Causal) {
@@ -62,19 +68,18 @@ void process_query_block(int i, const Tiling& t, int T,
             }
         }
 
-        Eigen::VectorXf m_new = m.cwiseMax(S.rowwise().maxCoeff());
-        Eigen::VectorXf alpha = (m - m_new).array().exp();
-        MatrixXfRM P          = (S.colwise() - m_new).array().exp().matrix();
-        Eigen::VectorXf l_new = alpha.cwiseProduct(l) + P.rowwise().sum();
+        m_new = m.cwiseMax(S.rowwise().maxCoeff());
+        alpha = (m - m_new).array().exp();
+        P     = (S.colwise() - m_new).array().exp().matrix();
+        l     = alpha.cwiseProduct(l) + P.rowwise().sum();
 
-        auto O_block = O.middleRows(row_start, cur_I);
-        O_block.array().colwise() *= alpha.array();
-        O.middleRows(row_start, cur_I) += P * V_j;
+        // noalias() lets Eigen accumulate into O_i without a temporary.
+        O_i.array().colwise() *= alpha.array();
+        O_i.noalias() += P * V_j;
 
         m = m_new;
-        l = l_new;
     }
-    O.middleRows(row_start, cur_I).array().colwise() /= l.array();
+    O_i.array().colwise() /= l.array();
 }
 
 }  // namespace

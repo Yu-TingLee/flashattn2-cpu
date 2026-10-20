@@ -26,39 +26,43 @@ ProfileResult fa2_forward_profile(const MatrixXfRM& Q, const MatrixXfRM& Kt,
 
         Eigen::VectorXf l = Eigen::VectorXf::Zero(cur_I);
         Eigen::VectorXf m = Eigen::VectorXf::Constant(cur_I, -INFINITY);
-        MatrixXfRM Q_i = Q.middleRows(row_start, cur_I);
+        Eigen::VectorXf m_new(cur_I), alpha(cur_I);
+        MatrixXfRM S(cur_I, t.J), P(cur_I, t.J);
+        const auto Q_i = Q.middleRows(row_start, cur_I);
+        auto O_i       = O.middleRows(row_start, cur_I);
 
         for (int j = 0; j < t.Tc; ++j) {
             const int col_start = j * t.J;
             const int cur_J     = std::min(col_start + t.J, T) - col_start;
 
+            // K and V are read through views, so their load is timed inside the products.
             auto tt = Clock::now();
-            MatrixXfRM Kt_j = Kt.middleCols(col_start, cur_J);
-            MatrixXfRM V_j  = V.middleRows(col_start, cur_J);
+            const auto Kt_j = Kt.middleCols(col_start, cur_J);
+            const auto V_j  = V.middleRows(col_start, cur_J);
+            S.resize(cur_I, cur_J);
+            P.resize(cur_I, cur_J);
             p.load_kv += since(tt);
 
             tt = Clock::now();
-            MatrixXfRM S = Q_i * Kt_j;
+            S.noalias() = Q_i * Kt_j;
             S *= scale;
             p.compute_s += since(tt);
 
             tt = Clock::now();
-            Eigen::VectorXf m_new = m.cwiseMax(S.rowwise().maxCoeff());
-            Eigen::VectorXf alpha = (m - m_new).array().exp();
-            MatrixXfRM P          = (S.colwise() - m_new).array().exp().matrix();
-            Eigen::VectorXf l_new = alpha.cwiseProduct(l) + P.rowwise().sum();
+            m_new = m.cwiseMax(S.rowwise().maxCoeff());
+            alpha = (m - m_new).array().exp();
+            P     = (S.colwise() - m_new).array().exp().matrix();
+            l     = alpha.cwiseProduct(l) + P.rowwise().sum();
             p.online_softmax += since(tt);
 
             tt = Clock::now();
-            auto O_block = O.middleRows(row_start, cur_I);
-            O_block.array().colwise() *= alpha.array();
-            O.middleRows(row_start, cur_I) += P * V_j;
+            O_i.array().colwise() *= alpha.array();
+            O_i.noalias() += P * V_j;
             p.update_o += since(tt);
 
             m = m_new;
-            l = l_new;
         }
-        O.middleRows(row_start, cur_I).array().colwise() /= l.array();
+        O_i.array().colwise() /= l.array();
     }
 
     p.runtime = since(t0);
