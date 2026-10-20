@@ -1,6 +1,7 @@
 #pragma once
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -10,6 +11,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include "flash_attn/flash_attention.hpp"
 #include "flash_attn/matrix_io.hpp"
 
 inline int arg_int(int argc, char** argv, const std::string& key, int def) {
@@ -23,6 +25,14 @@ inline std::string arg_str(int argc, char** argv, const std::string& key,
     for (int i = 1; i + 1 < argc; ++i)
         if (key == argv[i]) return argv[i + 1];
     return def;
+}
+
+inline flash_attn::Schedule parse_schedule(const std::string& s) {
+    if (s == "static")        return flash_attn::Schedule::Static;
+    if (s == "dynamic")       return flash_attn::Schedule::Dynamic;
+    if (s == "work_stealing") return flash_attn::Schedule::WorkStealing;
+    std::cerr << "Unknown schedule '" << s << "'. Use: static | dynamic | work_stealing\n";
+    std::exit(1);
 }
 
 // CSV log at outputs/<name>/runtime.csv. Rows already present are keyed by

@@ -85,6 +85,24 @@ run_profile() {
   done
 }
 
+run_profile_mt() {
+  for T in "${PROFILE_T_VALUES[@]}"; do
+    for d in "${D_VALUES[@]}"; do
+      for M in "${PROFILE_M_VALUES[@]}"; do
+        for nt in "${NUM_THREADS[@]}"; do
+          echo "FA-2 MT profile: T=$T, d=$d, M=$((M / 1024))KiB, threads=$nt"
+          "$BIN/bench_fa2_mt_profile" --T "$T" --d "$d" --M_bytes "$M" \
+            --num_testsets "$NUM_TESTSETS" --num_threads "$nt"
+          for sched in "${SCHEDULES[@]}"; do
+            "$BIN/bench_fa2_mt_profile" --T "$T" --d "$d" --M_bytes "$M" \
+              --num_testsets "$NUM_TESTSETS" --num_threads "$nt" --causal 1 --schedule "$sched"
+          done
+        done
+      done
+    done
+  done
+}
+
 run_fa2_python() {
   for M in "${M_VALUES[@]}"; do
     echo "FA-2 (NumPy): T=$T, d=$d, M=$((M / 1024))KiB"
@@ -109,6 +127,7 @@ for_each_t_d run_sdpa
 for_each_t_d run_fa2
 for_each_t_d run_fa2_causal
 run_profile
+run_profile_mt
 for_each_t_d run_fa2_python
 for_each_t_d run_fa2_numba
 

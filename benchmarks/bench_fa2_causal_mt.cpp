@@ -3,14 +3,6 @@
 #include "bench_utils.hpp"
 #include "flash_attn/flash_attention.hpp"
 
-static flash_attn::Schedule parse_schedule(const std::string& s) {
-    if (s == "static")        return flash_attn::Schedule::Static;
-    if (s == "dynamic")       return flash_attn::Schedule::Dynamic;
-    if (s == "work_stealing") return flash_attn::Schedule::WorkStealing;
-    std::cerr << "Unknown schedule '" << s << "'. Use: static | dynamic | work_stealing\n";
-    std::exit(1);
-}
-
 int main(int argc, char** argv) {
     const int T            = arg_int(argc, argv, "--T", 1024);
     const int d            = arg_int(argc, argv, "--d", 64);

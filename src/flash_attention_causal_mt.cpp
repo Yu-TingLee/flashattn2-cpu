@@ -16,7 +16,7 @@ double seconds_since(Clock::time_point t0) {
     return std::chrono::duration<double>(Clock::now() - t0).count();
 }
 
-template <Schedule S>
+template <bool Causal, Schedule S, bool Profile>
 void run_omp(const MatrixXfRM& Q, const MatrixXfRM& Kt, const MatrixXfRM& V,
              const Tiling& t, int T, float scale, int num_threads,
              MatrixXfRM& O, std::vector<ThreadMetrics>& metrics) {
@@ -28,13 +28,13 @@ void run_omp(const MatrixXfRM& Q, const MatrixXfRM& Kt, const MatrixXfRM& V,
         if constexpr (S == Schedule::Static) {
             #pragma omp for schedule(static) nowait
             for (int i = 0; i < t.Tr; ++i) {
-                process_query_block<true>(i, t, T, Q, Kt, V, scale, O);
+                process_query_block<Causal, Profile>(i, t, T, Q, Kt, V, scale, O, &tm.steps);
                 tm.blocks_processed++;
             }
         } else {
             #pragma omp for schedule(dynamic) nowait
             for (int i = 0; i < t.Tr; ++i) {
-                process_query_block<true>(i, t, T, Q, Kt, V, scale, O);
+                process_query_block<Causal, Profile>(i, t, T, Q, Kt, V, scale, O, &tm.steps);
                 tm.blocks_processed++;
             }
         }
@@ -43,8 +43,7 @@ void run_omp(const MatrixXfRM& Q, const MatrixXfRM& Kt, const MatrixXfRM& V,
     }
 }
 
-// Each thread starts with a contiguous range of query blocks and steals from
-// the others once its own queue is empty.
+template <bool Profile>
 void run_work_stealing(const MatrixXfRM& Q, const MatrixXfRM& Kt, const MatrixXfRM& V,
                        const Tiling& t, int T, float scale, int num_threads,
                        MatrixXfRM& O, std::vector<ThreadMetrics>& metrics) {
@@ -81,7 +80,7 @@ void run_work_stealing(const MatrixXfRM& Q, const MatrixXfRM& Kt, const MatrixXf
                     if (item) tm.steal_successes++;
                 }
                 if (!item) break;
-                process_query_block<true>(*item, t, T, Q, Kt, V, scale, O);
+                process_query_block<true, Profile>(*item, t, T, Q, Kt, V, scale, O, &tm.steps);
                 tm.blocks_processed++;
             }
 
@@ -103,16 +102,58 @@ MatrixXfRM fa2_forward_causal_mt(const MatrixXfRM& Q, const MatrixXfRM& Kt,
 
     switch (sched) {
         case Schedule::Static:
-            run_omp<Schedule::Static>(Q, Kt, V, t, T, scale, num_threads, O, metrics);
+            run_omp<true, Schedule::Static, false>(Q, Kt, V, t, T, scale, num_threads, O, metrics);
             break;
         case Schedule::Dynamic:
-            run_omp<Schedule::Dynamic>(Q, Kt, V, t, T, scale, num_threads, O, metrics);
+            run_omp<true, Schedule::Dynamic, false>(Q, Kt, V, t, T, scale, num_threads, O, metrics);
             break;
         case Schedule::WorkStealing:
-            run_work_stealing(Q, Kt, V, t, T, scale, num_threads, O, metrics);
+            run_work_stealing<false>(Q, Kt, V, t, T, scale, num_threads, O, metrics);
             break;
     }
     return O;
+}
+
+ProfileResult fa2_forward_mt_profile(const MatrixXfRM& Q, const MatrixXfRM& Kt,
+                                     const MatrixXfRM& V, int T, int d, int M_bytes,
+                                     float scale, bool causal, Schedule sched,
+                                     int num_threads) {
+    const Tiling t = make_tiling(T, d, M_bytes);
+    std::vector<ThreadMetrics> metrics(num_threads);
+    MatrixXfRM O = MatrixXfRM::Zero(T, d);
+
+    const auto t0 = Clock::now();
+    if (!causal) {
+        run_omp<false, Schedule::Dynamic, true>(Q, Kt, V, t, T, scale, num_threads, O, metrics);
+    } else {
+        switch (sched) {
+            case Schedule::Static:
+                run_omp<true, Schedule::Static, true>(Q, Kt, V, t, T, scale, num_threads, O, metrics);
+                break;
+            case Schedule::Dynamic:
+                run_omp<true, Schedule::Dynamic, true>(Q, Kt, V, t, T, scale, num_threads, O, metrics);
+                break;
+            case Schedule::WorkStealing:
+                run_work_stealing<true>(Q, Kt, V, t, T, scale, num_threads, O, metrics);
+                break;
+        }
+    }
+
+    ProfileData p;
+    p.runtime = seconds_since(t0);
+    double busy = 0.0;
+    for (const ThreadMetrics& tm : metrics) {
+        const ProfileData& s = tm.steps;
+        p.load_kv        += s.load_kv;
+        p.compute_s      += s.compute_s;
+        p.online_softmax += s.online_softmax;
+        p.update_o       += s.update_o;
+        p.others         += std::max(0.0, tm.wall_time_sec - s.load_kv - s.compute_s
+                                              - s.online_softmax - s.update_o);
+        busy += tm.wall_time_sec;
+    }
+    p.idle = std::max(0.0, num_threads * p.runtime - busy);
+    return {std::move(O), p};
 }
 
 }  // namespace flash_attn

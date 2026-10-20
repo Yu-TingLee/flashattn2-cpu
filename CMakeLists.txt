@@ -14,8 +14,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_L
     message(FATAL_ERROR "GCC >= 10 is required; configure with -DCMAKE_CXX_COMPILER=g++-11")
 endif()
 
-# Header-only, pinned so every build uses the same Eigen. Its CMake project is
-# not added, only its headers.
+# Header-only and pinned, so every build uses the same Eigen.
 include(FetchContent)
 FetchContent_Declare(eigen
     URL      https://gitlab.com/libeigen/eigen/-/archive/5.0.1/eigen-5.0.1.tar.gz
@@ -75,3 +74,6 @@ target_link_libraries(bench_fa2_mt PRIVATE flash_attn_mt)
 
 add_executable(bench_fa2_causal_mt benchmarks/bench_fa2_causal_mt.cpp)
 target_link_libraries(bench_fa2_causal_mt PRIVATE flash_attn_causal_mt)
+
+add_executable(bench_fa2_mt_profile benchmarks/bench_fa2_mt_profile.cpp)
+target_link_libraries(bench_fa2_mt_profile PRIVATE flash_attn_causal_mt)

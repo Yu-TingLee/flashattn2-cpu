@@ -1,8 +1,9 @@
 #pragma once
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <limits>
-#include "flash_attn/types.hpp"
+#include "flash_attn/flash_attention.hpp"
 
 namespace flash_attn {
 
@@ -25,11 +26,27 @@ Tiling make_tiling(int T, int d, int M_bytes) {
     return {I, J, (T + I - 1) / I, (T + J - 1) / J};
 }
 
-// Runs the FA-2 inner loop for query block i and writes its rows of O.
-template <bool Causal>
+// Empty unless Profile is set, so the unprofiled kernels carry no timers.
+template <bool Profile>
+struct StepTimer {
+    std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+    void lap(double* acc) {
+        const auto now = std::chrono::steady_clock::now();
+        *acc += std::chrono::duration<double>(now - t0).count();
+        t0 = now;
+    }
+};
+
+template <>
+struct StepTimer<false> {
+    void lap(double*) {}
+};
+
+template <bool Causal, bool Profile = false>
 void process_query_block(int i, const Tiling& t, int T,
                          const MatrixXfRM& Q, const MatrixXfRM& Kt,
-                         const MatrixXfRM& V, float scale, MatrixXfRM& O) {
+                         const MatrixXfRM& V, float scale, MatrixXfRM& O,
+                         ProfileData* prof = nullptr) {
     const int row_start = i * t.I;
     const int cur_I     = std::min(row_start + t.I, T) - row_start;
 
@@ -44,6 +61,7 @@ void process_query_block(int i, const Tiling& t, int T,
     const int j_end = Causal ? std::min(t.Tc, ((i + 1) * t.I + t.J - 1) / t.J) : t.Tc;
 
     for (int j = 0; j < j_end; ++j) {
+        StepTimer<Profile> timer;
         const int col_start = j * t.J;
         const int cur_J     = std::min(col_start + t.J, T) - col_start;
 
@@ -53,6 +71,9 @@ void process_query_block(int i, const Tiling& t, int T,
 
         S.resize(cur_I, cur_J);
         P.resize(cur_I, cur_J);
+        // K and V are read through views, so their load is timed inside the products.
+        timer.lap(Profile ? &prof->load_kv : nullptr);
+
         S.noalias() = Q_i * Kt_j;
         S *= scale;
 
@@ -68,14 +89,17 @@ void process_query_block(int i, const Tiling& t, int T,
             }
         }
 
+        timer.lap(Profile ? &prof->compute_s : nullptr);
+
         m_new = m.cwiseMax(S.rowwise().maxCoeff());
         alpha = (m - m_new).array().exp();
         P     = (S.colwise() - m_new).array().exp().matrix();
         l     = alpha.cwiseProduct(l) + P.rowwise().sum();
+        timer.lap(Profile ? &prof->online_softmax : nullptr);
 
-        // noalias() lets Eigen accumulate into O_i without a temporary.
         O_i.array().colwise() *= alpha.array();
         O_i.noalias() += P * V_j;
+        timer.lap(Profile ? &prof->update_o : nullptr);
 
         m = m_new;
     }
