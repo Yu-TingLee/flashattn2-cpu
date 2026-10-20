@@ -96,4 +96,4 @@ for_each_t_d run_fa2
 for_each_t_d run_fa2_causal
 run_profile_mt
 
-python plot.py --sdpa
+python plot.py

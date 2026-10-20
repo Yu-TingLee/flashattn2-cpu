@@ -1,6 +1,7 @@
 __pycache__/
 data/
 outputs/
+plots/
 build/
 paper/
 *.zip
