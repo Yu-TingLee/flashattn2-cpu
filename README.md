@@ -33,12 +33,12 @@ run.sh                Full benchmark sweep
 Dependencies
 ------------
 - **Python:** numpy, scipy, numba, pandas, matplotlib
-- **C++:** Eigen3 ≥ 3.3, OpenMP, CMake ≥ 3.16, C++17 compiler
+- **C++:** OpenMP, CMake ≥ 3.16, GCC ≥ 10 (or another C++17 compiler). CMake downloads Eigen 5.0.1 (header-only) at configure time
 
 Usage
 -----
 ```bash
-cmake -S . -B build && cmake --build build --parallel
+cmake -S . -B build -DCMAKE_CXX_COMPILER=g++-11 && cmake --build build --parallel
 bash run.sh
 ```
 

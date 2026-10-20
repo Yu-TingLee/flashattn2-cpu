@@ -9,7 +9,25 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
 endif()
 
-find_package(Eigen3 3.3 REQUIRED NO_MODULE)
+# Eigen 5's AVX-512 kernels use intrinsics that GCC only provides from GCC 10.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 10)
+    message(FATAL_ERROR "GCC >= 10 is required; configure with -DCMAKE_CXX_COMPILER=g++-11")
+endif()
+
+# Header-only, pinned so every build uses the same Eigen. Its CMake project is
+# not added, only its headers.
+include(FetchContent)
+FetchContent_Declare(eigen
+    URL      https://gitlab.com/libeigen/eigen/-/archive/5.0.1/eigen-5.0.1.tar.gz
+    URL_HASH SHA256=e9c326dc8c05cd1e044c71f30f1b2e34a6161a3b6ecf445d56b53ff1669e3dec
+)
+FetchContent_GetProperties(eigen)
+if(NOT eigen_POPULATED)
+    FetchContent_Populate(eigen)
+endif()
+add_library(Eigen3::Eigen INTERFACE IMPORTED)
+target_include_directories(Eigen3::Eigen INTERFACE ${eigen_SOURCE_DIR})
+
 find_package(OpenMP REQUIRED)
 find_package(Threads REQUIRED)
 
@@ -18,6 +36,11 @@ target_compile_definitions(flash_attn_compile_options INTERFACE EIGEN_NO_DEBUG)
 target_compile_options(flash_attn_compile_options INTERFACE
     $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-O3 -ffast-math -march=native>
     $<$<CXX_COMPILER_ID:MSVC>:/O2 /fp:fast /arch:AVX2>
+)
+# -ffast-math at link time turns on flush-to-zero. Without it, the masked
+# naive kernel's exp produces subnormals and runs up to 35% slower.
+target_link_options(flash_attn_compile_options INTERFACE
+    $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-ffast-math>
 )
 
 add_library(flash_attn_io STATIC src/matrix_io.cpp)
