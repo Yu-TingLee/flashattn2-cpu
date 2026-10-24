@@ -14,8 +14,9 @@ from flash_attn.testset import load_testset
 def load_tensors(data_dir, T, d):
     """Q, K, V as (1, 1, T, d) contiguous tensors: batch 1, one head."""
     Q, Kt, V = load_testset(data_dir, T, d)
-    return tuple(torch.from_numpy(np.ascontiguousarray(x)).view(1, 1, T, d)
-                 for x in (Q, Kt.T, V))
+    return tuple(
+        torch.from_numpy(np.ascontiguousarray(x)).view(1, 1, T, d) for x in (Q, Kt.T, V)
+    )
 
 
 def main():
@@ -29,10 +30,13 @@ def main():
 
     torch.set_num_threads(args.num_threads)
     prefix = "sdpa_causal" if args.causal else "sdpa"
-    log = RuntimeLog(f"{prefix}_t{args.num_threads}",
-                     "testset,T,d,runtime,is_correct", key_len=3)
+    log = RuntimeLog(
+        f"{prefix}_t{args.num_threads}", "testset,T,d,runtime,is_correct", key_len=3
+    )
     ref_name = f"O_{'causal_' if args.causal else ''}T{args.T}_d{args.d}.npy"
-    print(f"torch {torch.__version__}, {torch.get_num_threads()} threads, causal={args.causal}")
+    print(
+        f"torch {torch.__version__}, {torch.get_num_threads()} threads, causal={args.causal}"
+    )
 
     # Fail rather than fall back to the math backend.
     with sdpa_kernel(SDPBackend.FLASH_ATTENTION), torch.inference_mode():
@@ -54,8 +58,9 @@ def main():
             print_runtime(i, runtime)
 
             O_ref = np.load(os.path.join(data_dir, ref_name))
-            is_correct = np.allclose(O.view(args.T, args.d).numpy(), O_ref,
-                                     atol=1e-3, rtol=1e-3)
+            is_correct = np.allclose(
+                O.view(args.T, args.d).numpy(), O_ref, atol=1e-3, rtol=1e-3
+            )
             log.append(i, args.T, args.d, f"{runtime:.6f}", is_correct)
 
 

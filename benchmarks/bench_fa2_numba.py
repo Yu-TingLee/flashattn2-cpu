@@ -19,19 +19,26 @@ def main():
     parser.add_argument("--d", type=int, default=64)
     parser.add_argument("--M_bytes", type=int, default=131072)
     parser.add_argument("--num_testsets", type=int, default=100)
-    parser.add_argument("--num_threads", type=int,
-                        default=int(os.environ.get("NUMBA_NUM_THREADS", os.cpu_count())))
+    parser.add_argument(
+        "--num_threads",
+        type=int,
+        default=int(os.environ.get("NUMBA_NUM_THREADS", os.cpu_count())),
+    )
     args = parser.parse_args()
 
     # Numba reads its thread count at import time.
     os.environ["OPENBLAS_NUM_THREADS"] = "1"
     os.environ["NUMBA_NUM_THREADS"] = str(args.num_threads)
     import numba
+
     numba.set_num_threads(args.num_threads)
     from flash_attn.flash_attention_numba import fa2_forward
 
-    log = RuntimeLog(f"fa2_numba_t{args.num_threads}",
-                     "testset,T,d,M_bytes,runtime,is_correct", key_len=4)
+    log = RuntimeLog(
+        f"fa2_numba_t{args.num_threads}",
+        "testset,T,d,M_bytes,runtime,is_correct",
+        key_len=4,
+    )
     scale = np.float32(1.0 / np.sqrt(np.float32(args.d)))
 
     # Trigger JIT compilation before the timed runs.

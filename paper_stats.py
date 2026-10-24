@@ -1,4 +1,5 @@
 """Prints every number quoted in the paper's results. Run from the repo root."""
+
 import numpy as np
 import pandas as pd
 
@@ -9,9 +10,11 @@ pd.set_option("display.width", 200)
 
 def summary(s, label):
     s = s.dropna()
-    print(f"  {label:<34} n={len(s):2d}  min={s.min():.2f}  max={s.max():.2f}  "
-          f"median={s.median():.2f}  mean={s.mean():.2f}  "
-          f"geomean={np.exp(np.log(s).mean()):.2f}")
+    print(
+        f"  {label:<34} n={len(s):2d}  min={s.min():.2f}  max={s.max():.2f}  "
+        f"median={s.median():.2f}  mean={s.mean():.2f}  "
+        f"geomean={np.exp(np.log(s).mean()):.2f}"
+    )
 
 
 def long_t(index):
@@ -33,15 +36,30 @@ def vs_sdpa():
         summary((sd / fa2)[~big], "SDPA/FA-2 T<=1K")
         summary(nv / fa2, "naive/FA-2")
         summary((nv / fa2)[big], "naive/FA-2 T>=2K")
-        print(pd.DataFrame({"naive_ms": nv * 1e3, "fa2_ms": fa2 * 1e3, "sdpa_ms": sd * 1e3,
-                            "sdpa/fa2": sd / fa2, "naive/fa2": nv / fa2}).round(3).to_string())
+        print(
+            pd.DataFrame(
+                {
+                    "naive_ms": nv * 1e3,
+                    "fa2_ms": fa2 * 1e3,
+                    "sdpa_ms": sd * 1e3,
+                    "sdpa/fa2": sd / fa2,
+                    "naive/fa2": nv / fa2,
+                }
+            )
+            .round(3)
+            .to_string()
+        )
     return res
 
 
 def masked_vs_self(res):
     print("\n===== MASKED / SELF (time ratio; ideal 0.5) =====")
-    ms = pd.DataFrame({f"{k}_masked/self": res["masked"][k] / res["self"][k]
-                       for k in ("fa2", "sdpa", "naive")})
+    ms = pd.DataFrame(
+        {
+            f"{k}_masked/self": res["masked"][k] / res["self"][k]
+            for k in ("fa2", "sdpa", "naive")
+        }
+    )
     print(ms.round(3).to_string())
     for c in ms:
         summary(ms[c][long_t(ms.index)], f"{c} T>=2K")
@@ -57,12 +75,21 @@ def schedules():
             rows.append(b)
     sch = pd.concat(rows).reset_index()
     rt = sch.pivot_table(index=["threads", "T", "d"], columns="sched", values="runtime")
-    imb = sch.pivot_table(index=["threads", "T", "d"], columns="sched", values="load_imbalance")
-    out = pd.DataFrame({
-        "static_ms": rt.static * 1e3, "dyn_ms": rt.dynamic * 1e3, "ws_ms": rt.work_stealing * 1e3,
-        "static/dyn": rt.static / rt.dynamic, "static/ws": rt.static / rt.work_stealing,
-        "imb_static": imb.static, "imb_dyn": imb.dynamic, "imb_ws": imb.work_stealing,
-    })
+    imb = sch.pivot_table(
+        index=["threads", "T", "d"], columns="sched", values="load_imbalance"
+    )
+    out = pd.DataFrame(
+        {
+            "static_ms": rt.static * 1e3,
+            "dyn_ms": rt.dynamic * 1e3,
+            "ws_ms": rt.work_stealing * 1e3,
+            "static/dyn": rt.static / rt.dynamic,
+            "static/ws": rt.static / rt.work_stealing,
+            "imb_static": imb.static,
+            "imb_dyn": imb.dynamic,
+            "imb_ws": imb.work_stealing,
+        }
+    )
     print(out.round(3).to_string())
     for nt in (8, 16):
         o = out.xs(nt, level="threads")

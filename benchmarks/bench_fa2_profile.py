@@ -17,9 +17,11 @@ def main():
     args = parser.parse_args()
 
     # line7..line11 refer to the steps of Algorithm 1 in the report.
-    log = RuntimeLog("fa2_profile",
-                     "testset,T,d,M_bytes,runtime,line7,line8,line10,line11,others",
-                     key_len=4)
+    log = RuntimeLog(
+        "fa2_profile",
+        "testset,T,d,M_bytes,runtime,line7,line8,line10,line11,others",
+        key_len=4,
+    )
     scale = np.float32(1.0 / np.sqrt(np.float32(args.d)))
 
     for i in range(args.num_testsets):
