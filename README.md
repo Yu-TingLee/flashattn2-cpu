@@ -3,13 +3,13 @@ Performance Evaluation of FlashAttention-2 for Inference on CPU
 This repository contains implementations of the FlashAttention-2 forward kernel run on CPU. Standard attention baselines are also provided. For causal attention, three scheduling strategies are implemented: static, centralized dynamic, and work-stealing.
 
 The technical report, including algorithm derivation, complexity analysis, and interpretation, is available here:
-* [Performance Evaluation of FlashAttention-2 for Inference on CPU (PDF)](./flashattn2-cpu-report.pdf)
+* [Performance Evaluation of FlashAttention-2 for Inference on CPU (PDF)](./flash-attention2-cpu-report.pdf)
 
 Abstract
 ------------
 **TL;DR:** We evaluate the performance of FlashAttention-2 forward kernel for inference on CPU.
 
-FlashAttention has revolutionized transformer training and inference on GPU by minimizing memory I/O, yet its behavior on CPU remains underexplored. We evaluate the FlashAttention-2 (FA-2) forward kernel for inference on a single CPU against standard attention and PyTorch's scaled dot-product attention (SDPA). For masked attention, we compare three scheduling strategies for parallelizing the kernel. We further profile the runtime breakdown of the kernel's algorithmic steps. For self-attention, FA-2 is up to 1.6× faster than SDPA on short sequences and matches it on long sequences; for masked attention, FA-2 is 1.39–1.69× faster on long sequences. Profiling shows that the masked-attention gain comes from load balancing: dynamic and work-stealing scheduling leave 2–5% of thread time idle, while static scheduling leaves 45%. Our analysis serves as a preliminary exploration of efficient attention computations in resource-constrained settings, including CPU-only inference.
+FlashAttention has revolutionized transformer training and inference on GPU by minimizing memory I/O, yet its behavior on CPU remains underexplored. We evaluate the FlashAttention-2 (FA-2) forward kernel for inference on a single CPU against standard attention and PyTorch's scaled dot-product attention (SDPA). For masked attention, we compare three scheduling strategies for parallelizing the kernel. We further profile the runtime breakdown of the kernel's algorithmic steps. For self-attention, FA-2 performs on par with SDPA; for masked attention, it is 1.4× to 1.7× faster than SDPA on long sequences. Per-thread profiling shows that static scheduling leaves 45% of thread time idle on the triangular masked workload; dynamic and work-stealing scheduling reduce it to 2–5% and speed up the kernel by up to 1.4×. Our analysis serves as a preliminary exploration of efficient attention computations in resource-constrained settings, including CPU-only inference.
 
 <br>
 <p align="center">
