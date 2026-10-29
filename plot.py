@@ -10,7 +10,6 @@ import numpy as np
 import pandas as pd
 import scienceplots  # noqa: F401  (registers the science styles)
 from matplotlib.colors import LogNorm
-from matplotlib.lines import Line2D
 from matplotlib.ticker import FixedFormatter, FixedLocator, FuncFormatter, NullLocator
 
 OUT = "plots"
@@ -37,10 +36,13 @@ plt.rcParams.update(
         "lines.linewidth": 1.4,
         "lines.markersize": 5,
         "savefig.dpi": 300,
+        # Computer Modern ships with matplotlib, so the font does not depend on the
+        # installed SciencePlots version.
+        "font.serif": ["cmr10"],
+        "axes.unicode_minus": False,
     }
 )
 BLUE, RED, GREEN, PURPLE, GREY = "#4477AA", "#EE6677", "#228833", "#AA3377", "#BBBBBB"
-REF = "#555555"
 
 # The original profile legend and colors; keep them unchanged.
 SEGMENTS = ["line7", "line8", "line10", "line11", "others"]
@@ -118,14 +120,6 @@ def log_y(ax, ticks):
     ax.yaxis.set_major_locator(FixedLocator(ticks))
     ax.yaxis.set_minor_locator(NullLocator())
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}"))
-
-
-def ref(ax, y):
-    ax.axhline(y, color=REF, lw=0.9, zorder=1)
-
-
-def ref_handle(label):
-    return Line2D([], [], color=REF, lw=0.9, label=label)
 
 
 def handles_of(ax):
@@ -228,9 +222,15 @@ def compare_lines(ax, causal, d, scale):
     )
 
 
+def self_legend(ax):
+    # Rows: 8-thread lines, then 16-thread lines; the caption names the naive line.
+    h = handles_of(ax)  # FA-2 8, FA-2 16, SDPA 8, SDPA 16, naive
+    return [h[0], h[2], h[1], h[3]]
+
+
 def runtime_vs_sdpa(causal):
     with plt.rc_context(COL_RC):
-        fig, axes = fixed_panels(legend_rows=0 if causal else 3)
+        fig, axes = fixed_panels(legend_rows=0 if causal else 2)
         for ax, d in zip(axes, (64, 128)):
             compare_lines(ax, causal, d, lambda r: r * 1e3)
             t_axis(ax)
@@ -238,26 +238,23 @@ def runtime_vs_sdpa(causal):
             ax.set_xlabel("Sequence length $T$")
             ax.set_title(f"$d = {d}$")
         if not causal:
-            fixed_legend(fig, handles_of(axes[0]), ncol=2)
+            fixed_legend(fig, self_legend(axes[0]), ncol=2)
         save(fig, f"fa2_vs_sdpa_runtime_{case_name(causal)}.png")
 
 
 def speedup_over_sdpa(causal):
     base = best(sdpa(causal)).runtime
     with plt.rc_context(COL_RC):
-        fig, axes = fixed_panels(legend_rows=0 if causal else 3)
+        fig, axes = fixed_panels(legend_rows=0 if causal else 2)
         for ax, d in zip(axes, (64, 128)):
             compare_lines(ax, causal, d, lambda r: base / r)
-            ref(ax, 1.0)
             t_axis(ax)
             log_y(ax, [0.05, 0.1, 0.2, 0.5, 1, 2])
             ax.set_ylim(0.04, 2.6)
             ax.set_xlabel("Sequence length $T$")
             ax.set_title(f"$d = {d}$")
         if not causal:
-            fixed_legend(
-                fig, handles_of(axes[0]) + [ref_handle("Parity with SDPA")], ncol=2
-            )
+            fixed_legend(fig, self_legend(axes[0]), ncol=2)
         save(fig, f"speedup_{case_name(causal)}.png")
 
 
@@ -266,24 +263,22 @@ def schedules():
         nt: {s: best([f"fa2_causal_cpp_mt_{s}_t{nt}"]) for s in SCHEDULES}
         for nt in (8, 16)
     }
-    style = {"dynamic": (GREEN, "o"), "work_stealing": (BLUE, "s")}
+    # One baseline for every line: static scheduling with 8 threads.
+    base = bs[8]["static"].runtime
+    style = {
+        "static": (PURPLE, "^"),
+        "dynamic": (GREEN, "o"),
+        "work_stealing": (BLUE, "s"),
+    }
     with plt.rc_context(COL_RC):
         fig, axes = fixed_panels(legend_rows=2)
         for ax, d in zip(axes, (64, 128)):
-            ax.plot(
-                T_VALUES,
-                np.ones(len(T_VALUES)),
-                color=PURPLE,
-                marker="^",
-                label="Static",
-            )
             for nt, ls, fill in ((8, "-", True), (16, "--", False)):
-                b = bs[nt]
-                for s in ("dynamic", "work_stealing"):
+                for s in SCHEDULES:
                     color, mk = style[s]
                     ax.plot(
                         T_VALUES,
-                        (b["static"].runtime / b[s].runtime).xs(d, level="d"),
+                        (base / bs[nt][s].runtime).xs(d, level="d"),
                         color=color,
                         ls=ls,
                         marker=mk,
@@ -293,9 +288,8 @@ def schedules():
             t_axis(ax)
             ax.set_xlabel("Sequence length $T$")
             ax.set_title(f"$d = {d}$")
-        h = handles_of(axes[0])
-        # Rows: 8-thread lines and static, then 16-thread lines.
-        fixed_legend(fig, [h[1], h[2], h[0], h[3], h[4]], ncol=3)
+        # Rows: 8-thread lines, then 16-thread lines.
+        fixed_legend(fig, handles_of(axes[0]), ncol=3)
         save(fig, "schedules.png")
 
 
@@ -315,6 +309,7 @@ def heat_axes(ax):
     ax.minorticks_off()
     ax.tick_params(which="both", length=0, top=False, right=False)
     ax.set_xticks(range(len(T_VALUES)), T_LABELS)
+    ax.tick_params(axis="x", labelsize=6.5, pad=2)
     ax.set_yticks(range(len(HEAT_M_KIB)), [str(m) for m in reversed(HEAT_M_KIB)])
 
 
@@ -333,20 +328,40 @@ def annotate(ax, grid, fmt, dark):
             )
 
 
-HEAT_L, HEAT_GAP, HEAT_PH = 0.28, 0.06, 0.90  # left margin (M ticks only), gap, height
-HEAT_CB_GAP, HEAT_CB_W, HEAT_CB_R = 0.07, 0.06, 0.40  # color bar gap, width, label room
-HEAT_B, HEAT_T = 0.32, 0.16  # bottom (ticks + T label), title room
+HEAT_L, HEAT_GAP, HEAT_PH = 0.42, 0.06, 0.90  # left margin (M ticks + label), gap, height
+HEAT_CB_GAP, HEAT_CB_W, HEAT_CB_R = 0.07, 0.06, 0.38  # color bar gap, width, label room
+HEAT_B, HEAT_T = 0.30, 0.16  # bottom (ticks + T label), title room
+HEAT_MAX_PANELS = 3
+# Fixed panel width, so every heatmap has the same cell size in the paper.
+HEAT_PW = (
+    COL_W
+    - HEAT_L
+    - (HEAT_MAX_PANELS - 1) * HEAT_GAP
+    - HEAT_CB_GAP
+    - HEAT_CB_W
+    - HEAT_CB_R
+) / HEAT_MAX_PANELS
 
 
-def heat_strip(grids, titles, name, cmap, norm, fmt, dark, cbar_label, cbar_ticks=None):
+def heat_strip(
+    grids, titles, name, cmap, norm, fmt, dark, cbar_label, cbar_ticks=None, fill=False
+):
+    """With fill, panels stretch to the full width; otherwise they keep HEAT_PW."""
     n = len(grids)
-    pw = (COL_W - HEAT_L - (n - 1) * HEAT_GAP - HEAT_CB_GAP - HEAT_CB_W - HEAT_CB_R) / n
+    if fill:
+        pw = (
+            COL_W - HEAT_L - (n - 1) * HEAT_GAP - HEAT_CB_GAP - HEAT_CB_W - HEAT_CB_R
+        ) / n
+        x0 = HEAT_L
+    else:
+        pw = HEAT_PW
+        x0 = (HEAT_MAX_PANELS - n) * (pw + HEAT_GAP) / 2 + HEAT_L
     fig_h = HEAT_B + HEAT_PH + HEAT_T
     with plt.rc_context(COL_RC):
         fig = plt.figure(figsize=(COL_W, fig_h))
         axes = []
         for i, (grid, title) in enumerate(zip(grids, titles)):
-            left = HEAT_L + i * (pw + HEAT_GAP)
+            left = x0 + i * (pw + HEAT_GAP)
             ax = fig.add_axes(
                 (left / COL_W, HEAT_B / fig_h, pw / COL_W, HEAT_PH / fig_h),
                 sharey=axes[0] if axes else None,
@@ -355,11 +370,19 @@ def heat_strip(grids, titles, name, cmap, norm, fmt, dark, cbar_label, cbar_tick
             heat_axes(ax)
             annotate(ax, grid, fmt, dark)
             ax.set_title(title)
-            ax.set_xlabel("$T$")
             if i:
                 ax.tick_params(labelleft=False)
             axes.append(ax)
-        cb_left = HEAT_L + n * pw + (n - 1) * HEAT_GAP + HEAT_CB_GAP
+        axes[0].set_ylabel("$M$ (KiB)")
+        panels_right = x0 + n * pw + (n - 1) * HEAT_GAP
+        fig.text(
+            (x0 + panels_right) / 2 / COL_W,
+            0.0,
+            "Sequence length $T$",
+            ha="center",
+            va="bottom",
+        )
+        cb_left = panels_right + HEAT_CB_GAP
         cax = fig.add_axes(
             (cb_left / COL_W, HEAT_B / fig_h, HEAT_CB_W / COL_W, HEAT_PH / fig_h)
         )
@@ -372,7 +395,7 @@ def heat_strip(grids, titles, name, cmap, norm, fmt, dark, cbar_label, cbar_tick
             )
         cbar.ax.yaxis.set_minor_locator(NullLocator())
         cbar.ax.tick_params(which="both", right=True, left=False, length=2)
-        save(fig, name)
+        save(fig, name, tight=False)
 
 
 def load_imbalance_heatmap():
@@ -410,10 +433,11 @@ def steal_success_heatmap():
         "steal_success_heatmap.png",
         "YlGnBu",
         plt.Normalize(0, vmax),
-        ".3f",
+        ".2f",
         lambda v: v > vmax * 0.55,
         "Success rate",
         [0, 0.1, 0.2, 0.3],
+        fill=True,
     )
 
 
